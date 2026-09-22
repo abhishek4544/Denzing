@@ -31,3 +31,4 @@ The selector will automatically include any tool registered in the registry. Rea
 ## Layout and styling rules
 
 The layout is intentionally stable. Follow `docs/STYLE_GUIDE.md`, `docs/COMPONENTS.md`, and `docs/LAYOUT_RESTRICTIONS.md`. Agent-specific rules are in `AGENTS.md`.
+# Denzing

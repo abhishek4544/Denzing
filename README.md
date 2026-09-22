@@ -1,36 +1,33 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Potatoo Tool
 
-## Getting Started
+Potatoo Tool is a Next.js platform for a collection of focused creative tools. It provides one stable canvas-and-controls layout, shared inspector components, and a tool switcher. The first included tool is **Thirdfactor Thumbnail**.
 
-First, run the development server:
+## Start the app
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open the local URL printed by Next.js. The root route redirects to the default tool at `/tools/thirdfactor-thumbnail`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Quality checks
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run check
+```
 
-## Learn More
+This runs linting, type checking, and the production build. Run it before sharing or publishing the starter.
 
-To learn more about Next.js, take a look at the following resources:
+## Add a tool
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Add the tool definition to `features/tool-registry.ts`.
+2. Create a feature folder in `features/<tool-id>/` containing the tool's settings defaults, client component, and export logic.
+3. Add a case for the tool ID in `app/tools/[toolId]/page.tsx`.
+4. Compose the feature with the shared `ToolShell`, `CanvasArea`, `ControlsPanel`, and field components.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The selector will automatically include any tool registered in the registry. Read [the component reference](docs/COMPONENTS.md) and [the adding-a-tool guide](docs/ADDING_A_TOOL.md) before creating one.
 
-## Deploy on Vercel
+## Layout and styling rules
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The layout is intentionally stable. Follow `docs/STYLE_GUIDE.md`, `docs/COMPONENTS.md`, and `docs/LAYOUT_RESTRICTIONS.md`. Agent-specific rules are in `AGENTS.md`.

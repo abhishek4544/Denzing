@@ -1,11 +1,10 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState, type ComponentRef } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { lazy, Suspense, useCallback, useRef, useState, type ComponentRef } from "react";
+import type { OrbitControls } from "@react-three/drei";
 import { GripVertical } from "lucide-react";
-import * as THREE from "three";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import {
   CanvasArea,
   ColorField,
@@ -22,6 +21,7 @@ import { downloadPreset, pickPresetFile } from "@/features/preset-io";
 import { tools } from "@/features/tool-registry";
 import {
   defaultStrataSettings,
+  canvasAspectOptions,
   frameColorPresets,
   frameShapeOptions,
   glassEnvOptions,
@@ -32,34 +32,26 @@ import {
   type GlassEnv,
   type LayerConcept,
   type StrataSettings,
+  type CanvasAspect,
 } from "./defaults";
-import { MeshStrataScene } from "./scene";
+import MeshStrataViewer from "./viewer";
+import { validateStrataPreset } from "./validate-preset";
+import { LayerOrderedControls } from "./layer-ordered-controls";
+import { CustomAspectDialog } from "./custom-aspect-dialog";
 import { exportStrataScene } from "./export-image";
+import type { ExportCamera } from "./export-options";
 
-function CameraSync({ fov, iso }: { fov: number; iso: boolean }) {
-  const get = useThree((s) => s.get);
-  useEffect(() => {
-    const cam = get().camera;
-    if (cam instanceof THREE.PerspectiveCamera) {
-      cam.fov = iso ? Math.min(fov, 22) : fov;
-      cam.updateProjectionMatrix();
-    }
-  }, [get, fov, iso]);
-  return null;
-}
-
-function ExposureSync() {
-  const get = useThree((s) => s.get);
-  useEffect(() => {
-    const g = get().gl;
-    g.toneMapping = THREE.ACESFilmicToneMapping;
-    g.toneMappingExposure = 1.15;
-  }, [get]);
-  return null;
-}
+const ExportDialog = lazy(() => import("./export-dialog"));
 
 export function MeshStrata3DTool() {
   const [settings, setSettings] = useState<StrataSettings>(defaultStrataSettings);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [customAspectOpen, setCustomAspectOpen] = useState(false);
+  const selectAspect = (value: CanvasAspect) => {
+    if (value === "custom") setCustomAspectOpen(true);
+    else update("canvasAspect", value);
+  };
+  const [exportCamera, setExportCamera] = useState<ExportCamera>({ position: [0.9, 4.05, 45], target: [0, 0, 0] });
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const orbitControlsRef = useRef<ComponentRef<typeof OrbitControls>>(null);
 
@@ -82,7 +74,7 @@ export function MeshStrata3DTool() {
   const onLoadPreset = useCallback(() => {
     pickPresetFile<StrataSettings>(
       "mesh-strata-3d",
-      (loaded) => setSettings({ ...defaultStrataSettings, ...loaded }),
+      (loaded) => setSettings(validateStrataPreset(loaded)),
       (msg) => {
         if (typeof window !== "undefined") window.alert(`Preset load failed: ${msg}`);
       },
@@ -219,7 +211,7 @@ export function MeshStrata3DTool() {
     }));
   }, []);
 
-  const onExport = useCallback(() => {
+  const onPngExport = useCallback(() => {
     const host = canvasHostRef.current;
     if (!host) return;
     const gl = host.querySelector("canvas");
@@ -227,60 +219,50 @@ export function MeshStrata3DTool() {
   }, []);
 
   // Pulled-back framing leaves breathing room around the full stack.
-  const camDistance = 45;
-  const camPos: [number, number, number] = settings.isoView
-    ? [camDistance * 0.72, camDistance * 0.62, camDistance * 0.72]
-    : [camDistance * 0.02, camDistance * 0.09, camDistance * 1.0];
-
   return (
     <ToolShell
       toolLabel="Mesh Strata 3D"
       tools={tools}
       activeToolId="mesh-strata-3d"
-      onExport={onExport}
+      topbarActions={
+        <Select value={settings.canvasAspect ?? "auto"}
+          onValueChange={(value) => { if (value !== null) selectAspect(value as CanvasAspect); }}>
+          <SelectTrigger aria-label="Canvas aspect ratio"
+            className="!h-[40px] !w-auto min-w-[138px] !rounded-[8px] !border-border !bg-card !px-3 !text-[14px] !font-medium shadow-none">
+            <span>Ratio · {settings.canvasAspect && settings.canvasAspect !== "auto" ? settings.canvasAspect === "custom" ? `${settings.canvasAspectWidth ?? 16}:${settings.canvasAspectHeight ?? 9}` : settings.canvasAspect : "Auto"}</span>
+          </SelectTrigger>
+          <SelectContent>
+            {canvasAspectOptions.map((option) => <SelectItem key={option.value} value={option.value} onClick={() => { if (option.value === "custom") setCustomAspectOpen(true); }}>{option.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      }
+      onExport={() => {
+        const controls = orbitControlsRef.current;
+        const rect = canvasHostRef.current?.querySelector("canvas")?.getBoundingClientRect();
+        if (controls) setExportCamera({ position: controls.object.position.toArray() as [number, number, number], target: controls.target.toArray() as [number, number, number], viewport: rect ? { width: rect.width, height: rect.height } : undefined });
+        setExportOpen(true);
+      }}
     >
+      {customAspectOpen && <CustomAspectDialog width={settings.canvasAspectWidth ?? 16} height={settings.canvasAspectHeight ?? 9}
+        onClose={() => setCustomAspectOpen(false)} onApply={(width, height) => {
+          setSettings((current) => ({ ...current, canvasAspect: "custom", canvasAspectWidth: width, canvasAspectHeight: height }));
+          setCustomAspectOpen(false);
+        }} />}
+      {exportOpen && <Suspense fallback={null}>
+        <ExportDialog settings={settings} camera={exportCamera} onPng={onPngExport} onClose={() => setExportOpen(false)} />
+      </Suspense>}
       <CanvasArea hasLeftPanel>
         <div
           ref={canvasHostRef}
           className="relative h-full w-full rounded-lg overflow-hidden"
           style={{
-            background: settings.backgroundColor,
+            background: settings.canvasAspect && settings.canvasAspect !== "auto" ? "var(--background)" : settings.backgroundColor,
             boxShadow:
               "inset 0 0 0 1px rgba(255,255,255,0.05), 0 22px 60px -30px rgba(0,0,0,0.65)",
           }}
         >
-          <Canvas
-            dpr={2}
-            gl={{
-              antialias: true,
-              powerPreference: "high-performance",
-              preserveDrawingBuffer: true,
-              alpha: false,
-              stencil: false,
-            }}
-            camera={{
-              position: camPos,
-              fov: settings.fov,
-              near: 0.1,
-              far: 200,
-            }}
-          >
-            <color attach="background" args={[settings.backgroundColor]} />
-            <ExposureSync />
-            <CameraSync fov={settings.fov} iso={settings.isoView} />
-            <OrbitControls
-              ref={orbitControlsRef}
-              enableDamping
-              dampingFactor={0.08}
-              minDistance={10}
-              maxDistance={60}
-              autoRotate={settings.autoRotate}
-              autoRotateSpeed={settings.rotateSpeed / 20}
-              makeDefault
-              target={[0, 0, 0]}
-            />
-            <MeshStrataScene settings={settings} />
-          </Canvas>
+          <MeshStrataViewer settings={settings} maxDpr={2} paused={exportOpen}
+            preserveDrawingBuffer interactive controlsRef={orbitControlsRef} />
         </div>
       </CanvasArea>
 
@@ -415,7 +397,7 @@ export function MeshStrata3DTool() {
               )}
               {!isLast && (
                 <div className="px-2 pb-1 space-y-1">
-                  <ToggleField
+                  <ToggleField size="compact"
                     label="Wires to next layer"
                     checked={
                       settings.interlayerEnabledByPair[i] ??
@@ -454,6 +436,7 @@ export function MeshStrata3DTool() {
         }
         onReset={onReset}
       >
+        <LayerOrderedControls concepts={settings.layerConcept.slice(0, settings.layerCount)}>
         <Section title="Preset">
           <div className="flex gap-1.5">
             <SectionButton
@@ -521,7 +504,7 @@ export function MeshStrata3DTool() {
             max={100}
             onChange={(v) => update("amplitude", v)}
           />
-          <ToggleField
+          <ToggleField size="compact"
             label="Random Amplitude"
             checked={settings.randomAmplitude}
             onCheckedChange={(v) => update("randomAmplitude", v)}
@@ -555,7 +538,7 @@ export function MeshStrata3DTool() {
             max={100}
             onChange={(v) => update("contentOpacity", v)}
           />
-          <ToggleField
+          <ToggleField size="compact"
             label="Connecting Lines"
             checked={settings.contentConnect}
             onCheckedChange={(v) => update("contentConnect", v)}
@@ -677,7 +660,7 @@ export function MeshStrata3DTool() {
             max={100}
             onChange={(v) => update("frameOpacity", v)}
           />
-          <ToggleField
+          <ToggleField size="compact"
             label="Side Grid"
             checked={settings.frameGridEnabled}
             onCheckedChange={(v) => update("frameGridEnabled", v)}
@@ -708,7 +691,7 @@ export function MeshStrata3DTool() {
         </Section>
 
         <Section title="Glass">
-          <ToggleField
+          <ToggleField size="compact"
             label="Enable Glass"
             checked={settings.frameGlass}
             onCheckedChange={(v) => update("frameGlass", v)}
@@ -790,7 +773,7 @@ export function MeshStrata3DTool() {
             max={100}
             onChange={(v) => update("frameGlassAttenuation", v)}
           />
-          <ToggleField
+          <ToggleField size="compact"
             label="Backside Refraction"
             checked={settings.frameGlassBackside}
             onCheckedChange={(v) => update("frameGlassBackside", v)}
@@ -809,7 +792,7 @@ export function MeshStrata3DTool() {
               layerSparkleHeight: Array(MAX_LAYERS).fill(null),
             }))}
           />
-          <ToggleField
+          <ToggleField size="compact"
             label="Glass"
             checked={settings.sparkleGlass}
             onCheckedChange={(v) => update("sparkleGlass", v)}
@@ -897,7 +880,7 @@ export function MeshStrata3DTool() {
             max={45}
             onChange={(v) => update("sparkleBevel", v)}
           />
-          <ToggleField
+          <ToggleField size="compact"
             label="Sparkle Cutout"
             checked={settings.sparkleSubtract}
             onCheckedChange={(v) => update("sparkleSubtract", v)}
@@ -920,7 +903,7 @@ export function MeshStrata3DTool() {
           />
             </>
           )}
-          <ToggleField
+          <ToggleField size="compact"
             label="Billboard (flat only)"
             checked={settings.sparkleBillboard}
             onCheckedChange={(v) => update("sparkleBillboard", v)}
@@ -1025,7 +1008,7 @@ export function MeshStrata3DTool() {
             max={50}
             onChange={(v) => update("agentMinAmplitude", v)}
           />
-          <ToggleField
+          <ToggleField size="compact"
             label="Junction Split"
             checked={settings.agentJunctionSplit}
             onCheckedChange={(v) => update("agentJunctionSplit", v)}
@@ -1179,7 +1162,7 @@ export function MeshStrata3DTool() {
         </Section>
 
         <Section title="Interlayer Fanout">
-          <ToggleField
+          <ToggleField size="compact"
             label="Enabled"
             checked={settings.interlayerEnabled}
             onCheckedChange={(v) => update("interlayerEnabled", v)}
@@ -1270,7 +1253,7 @@ export function MeshStrata3DTool() {
             onOpacityChange={(v) => update("interlayerOpacity", v)}
             showPipette={false}
           />
-          <ToggleField
+          <ToggleField size="compact"
             label="Use Palette"
             checked={settings.interlayerUsePalette}
             onCheckedChange={(v) => update("interlayerUsePalette", v)}
@@ -1464,12 +1447,15 @@ export function MeshStrata3DTool() {
         </Section>
 
         <Section title="Camera">
-          <ToggleField
+          <SelectField label="Aspect Ratio" value={settings.canvasAspect ?? "auto"}
+            options={canvasAspectOptions} onChange={selectAspect} />
+          {settings.canvasAspect === "custom" && <SectionButton onClick={() => setCustomAspectOpen(true)}>Edit custom ratio</SectionButton>}
+          <ToggleField size="compact"
             label="Isometric"
             checked={settings.isoView}
             onCheckedChange={(v) => update("isoView", v)}
           />
-          <ToggleField
+          <ToggleField size="compact"
             label="Auto Rotate"
             checked={settings.autoRotate}
             onCheckedChange={(v) => update("autoRotate", v)}
@@ -1663,6 +1649,7 @@ export function MeshStrata3DTool() {
             onChange={(v) => update("bloomIntensity", v)}
           />
         </Section>
+        </LayerOrderedControls>
       </ControlsPanel>
     </ToolShell>
   );

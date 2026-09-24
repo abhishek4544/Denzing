@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
+import { FoundationBatch } from "./foundation-batch";
 import { LayerNameLabel } from "./layer-name-label";
 import { Environment, Lightformer, MeshTransmissionMaterial } from "@react-three/drei";
 import {
@@ -821,24 +822,6 @@ function LayerContent({
   foundationFillOpacity: number;
   foundationEdgeOpacity: number;
 }) {
-  const foundationBoxGeom = useMemo(
-    () => (type === "data-foundation" ? new THREE.BoxGeometry(1, 1, 1) : null),
-    [type],
-  );
-  const foundationEdgesGeom = useMemo(
-    () =>
-      type === "data-foundation"
-        ? new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1))
-        : null,
-    [type],
-  );
-  useEffect(
-    () => () => {
-      foundationBoxGeom?.dispose();
-      foundationEdgesGeom?.dispose();
-    },
-    [foundationBoxGeom, foundationEdgesGeom],
-  );
   const latticeEdgeGeom = useMemo(() => {
     if (type !== "lattice" || edges.length === 0 || positions.length === 0) {
       return null;
@@ -866,6 +849,7 @@ function LayerContent({
   const groupRefs = useRef<(THREE.Group | null)[]>([]);
 
   useFrame((state) => {
+    if (type === "data-foundation") return;
     const t = state.clock.elapsedTime;
     const bobAmp = (bob / 100) * size * 0.6;
     const rotAmp = (bob / 100) * 0.6;
@@ -906,55 +890,16 @@ function LayerContent({
 
   if (type === "none" || positions.length === 0) return null;
 
-  if (type === "data-foundation" && foundationBoxGeom && foundationEdgesGeom) {
-    const fColor = foundationColor || color;
+  if (type === "data-foundation") {
     const gapFrac = Math.min(0.45, boxGapFrac ?? 0);
-    const bs = (foundationBlockSize / 100) * size * 2.4 * (1 - gapFrac * 2);
-    const maxH = (foundationMaxHeight / 100) * size * 4;
-    return (
-      <group position={[0, layerY, 0]}>
-        {positions.map((p, i) => {
-          const factor = heightFactors?.[i] ?? 0.5;
-          const h = Math.max(0.02, maxH * factor);
-          return (
-            <group
-              key={i}
-              ref={(el) => {
-                groupRefs.current[i] = el;
-              }}
-              position={p}
-            >
-              <mesh
-                geometry={foundationBoxGeom}
-                position={[0, h / 2, 0]}
-                scale={[bs, h, bs]}
-              >
-                <meshBasicMaterial
-                  color={fColor}
-                  transparent
-                  opacity={opacity * (foundationFillOpacity / 100)}
-                  toneMapped={false}
-                  depthWrite={false}
-                />
-              </mesh>
-              <lineSegments
-                geometry={foundationEdgesGeom}
-                position={[0, h / 2, 0]}
-                scale={[bs, h, bs]}
-              >
-                <lineBasicMaterial
-                  color={fColor}
-                  transparent
-                  opacity={opacity * (foundationEdgeOpacity / 100)}
-                  depthWrite={false}
-                  toneMapped={false}
-                />
-              </lineSegments>
-            </group>
-          );
-        })}
-      </group>
-    );
+    return <FoundationBatch positions={positions} heightFactors={heightFactors}
+      width={(foundationBlockSize / 100) * size * 2.4 * (1 - gapFrac * 2)}
+      maxHeight={(foundationMaxHeight / 100) * size * 4}
+      layerY={layerY} layerIndex={layerIndex} size={size} bob={bob}
+      color={foundationColor || color}
+      fillOpacity={opacity * foundationFillOpacity / 100}
+      edgeOpacity={opacity * foundationEdgeOpacity / 100}
+      sharedUniforms={sharedUniforms} />;
   }
 
   if (type === "lattice") {
@@ -2606,6 +2551,7 @@ function AgentArcs({
   const arcsRef = useRef<ArcEntry[]>([]);
   const meshesRef = useRef<
     Array<{
+      geometryArc?: ArcEntry;
       line: THREE.Line;
       mat: THREE.ShaderMaterial;
       head: THREE.Mesh;
@@ -2624,23 +2570,18 @@ function AgentArcs({
   useEffect(() => {
     const group = groupRef.current;
     if (!group || nodes.length < 2) return;
-    // Reset pool.
-    for (const m of meshesRef.current) {
-      m.line.geometry.dispose();
-      m.mat.dispose();
-      m.head.geometry.dispose();
-      m.headMat.dispose();
-      m.ringA.geometry.dispose();
-      m.ringB.geometry.dispose();
-      m.ringMatA.dispose();
-      m.ringMatB.dispose();
-      group.remove(m.line);
-      group.remove(m.head);
-      group.remove(m.ringA);
-      group.remove(m.ringB);
-    }
-    meshesRef.current = [];
-    arcsRef.current = [];
+    const disposePool = () => {
+      for (const m of meshesRef.current) {
+        m.line.geometry.dispose(); m.mat.dispose();
+        m.head.geometry.dispose(); m.headMat.dispose();
+        m.ringA.geometry.dispose(); m.ringB.geometry.dispose();
+        m.ringMatA.dispose(); m.ringMatB.dispose();
+        group.remove(m.line, m.head, m.ringA, m.ringB);
+      }
+      meshesRef.current = [];
+      arcsRef.current = [];
+    };
+    disposePool();
     const rand = seededPrng(Math.floor(seed * 1000) + 8117);
     randRef.current = rand;
     const now = travelClock.current;
@@ -2741,6 +2682,7 @@ function AgentArcs({
         ringMatB,
       });
     }
+    return disposePool;
   }, [clampedCount, seed, nodes, arcLift, arcColor, arcGlow, arcDashLength, arcSpeed]);
 
   useFrame((state, delta) => {
@@ -2756,7 +2698,7 @@ function AgentArcs({
       m.mat.uniforms.uGlow.value = arcGlow / 100;
       m.mat.uniforms.uDashLen.value = arcDashLength / 100;
       m.mat.uniforms.uSpeed.value = arcSpeed / 20;
-      m.mat.uniforms.uTime.value = state.clock.getElapsedTime();
+      m.mat.uniforms.uTime.value = state.clock.elapsedTime;
       m.headMat.color.set(arcColor);
       m.ringMatA.color.set(arcColor);
       m.ringMatB.color.set(arcColor);
@@ -2777,40 +2719,44 @@ function AgentArcs({
       const drawProg = Math.min(1, Math.max(0, prog / 0.55));
       m.mat.uniforms.uProgress.value = drawProg;
 
-      const posAttr = m.line.geometry.getAttribute(
-        "position",
-      ) as THREE.BufferAttribute;
-      const distAttr = m.line.geometry.getAttribute(
-        "aDist",
-      ) as THREE.BufferAttribute;
-      let lastX = 0;
-      let lastY = 0;
-      let lastZ = 0;
-      let total = 0;
-      for (let s = 0; s < SAMPLES; s += 1) {
-        const u = s / (SAMPLES - 1);
-        const omu = 1 - u;
-        const x = omu * omu * arc.a.x + 2 * omu * u * arc.ctrl.x + u * u * arc.b.x;
-        const y = omu * omu * arc.a.y + 2 * omu * u * arc.ctrl.y + u * u * arc.b.y;
-        const z = omu * omu * arc.a.z + 2 * omu * u * arc.ctrl.z + u * u * arc.b.z;
-        posAttr.setXYZ(s, x, y, z);
-        if (s === 0) {
-          distAttr.setX(s, 0);
-        } else {
-          total += Math.hypot(x - lastX, y - lastY, z - lastZ);
-          distAttr.setX(s, total);
-        }
-        lastX = x;
-        lastY = y;
-        lastZ = z;
-      }
-      if (total > 0) {
+      // The curve is fixed for its lifetime; only progress/head motion changes.
+      if (m.geometryArc !== arc) {
+        const posAttr = m.line.geometry.getAttribute(
+          "position",
+        ) as THREE.BufferAttribute;
+        const distAttr = m.line.geometry.getAttribute(
+          "aDist",
+        ) as THREE.BufferAttribute;
+        let lastX = 0;
+        let lastY = 0;
+        let lastZ = 0;
+        let total = 0;
         for (let s = 0; s < SAMPLES; s += 1) {
-          distAttr.setX(s, distAttr.getX(s) / total);
+          const u = s / (SAMPLES - 1);
+          const omu = 1 - u;
+          const x = omu * omu * arc.a.x + 2 * omu * u * arc.ctrl.x + u * u * arc.b.x;
+          const y = omu * omu * arc.a.y + 2 * omu * u * arc.ctrl.y + u * u * arc.b.y;
+          const z = omu * omu * arc.a.z + 2 * omu * u * arc.ctrl.z + u * u * arc.b.z;
+          posAttr.setXYZ(s, x, y, z);
+          if (s === 0) {
+            distAttr.setX(s, 0);
+          } else {
+            total += Math.hypot(x - lastX, y - lastY, z - lastZ);
+            distAttr.setX(s, total);
+          }
+          lastX = x;
+          lastY = y;
+          lastZ = z;
         }
+        if (total > 0) {
+          for (let s = 0; s < SAMPLES; s += 1) {
+            distAttr.setX(s, distAttr.getX(s) / total);
+          }
+        }
+        posAttr.needsUpdate = true;
+        distAttr.needsUpdate = true;
+        m.geometryArc = arc;
       }
-      posAttr.needsUpdate = true;
-      distAttr.needsUpdate = true;
 
       const uh = drawProg;
       const omuh = 1 - uh;
@@ -4065,7 +4011,7 @@ function InterlayerConnectors({
 
   // ─── Live uniform sync + animation ────────────────────────────────
   useFrame((state) => {
-    const now = state.clock.getElapsedTime();
+    const now = state.clock.elapsedTime;
     const u = tubeMaterial.uniforms;
     u.uTime.value = now;
     u.uBoxBobAmplitude.value = Math.max(0, contentBob) / 100 * contentSize * 0.008 * 0.6;
@@ -4660,7 +4606,7 @@ function FrameEdges({
   );
 }
 
-export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
+export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: StrataSettings; labelReferenceHeight?: number }) {
   const {
     layerCount,
     layerGaps,
@@ -5204,6 +5150,7 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
           return (
             <group key={idx}>
               <LayerNameLabel
+                referenceHeight={labelReferenceHeight}
                 fontSize={settings.layerLabelFontSize}
                 name={settings.layerNames[idx]?.trim() || `Layer ${idx + 1}`}
                 layerY={layer.y}

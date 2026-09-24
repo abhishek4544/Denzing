@@ -54,7 +54,8 @@ export function SliderField({
     setOpen(false);
   };
   const range = max - min;
-  const pct = range === 0 ? 0 : ((value - min) / range) * 100;
+  const pct = range === 0 ? 0 : Math.min(100, Math.max(0, ((value - min) / range) * 100));
+  const displayValue = Number(value.toPrecision(12));
 
   const commitFromPointer = useCallback(
     (clientX: number) => {
@@ -78,16 +79,18 @@ export function SliderField({
     const onUp = () => setDragging(false);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
     };
   }, [dragging, commitFromPointer]);
 
   return (
     <FieldRow label={label}>
       <Popover.Root open={open} onOpenChange={(next) => {
-        if (next) setDraft(String(value));
+        if (next) setDraft(String(displayValue));
         setOpen(next);
       }}>
       <div className="relative">
@@ -108,24 +111,24 @@ export function SliderField({
           const bigStep = step * 10;
           if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
             e.preventDefault();
-            const next = Math.max(min, value - step);
+            const next = snapSliderValue(value - step, min, max, step);
             if (next !== value) {
               playTick();
               onChange(next);
             }
           } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
             e.preventDefault();
-            const next = Math.min(max, value + step);
+            const next = snapSliderValue(value + step, min, max, step);
             if (next !== value) {
               playTick();
               onChange(next);
             }
           } else if (e.key === "PageDown") {
             e.preventDefault();
-            onChange(Math.max(min, value - bigStep));
+            onChange(snapSliderValue(value - bigStep, min, max, step));
           } else if (e.key === "PageUp") {
             e.preventDefault();
-            onChange(Math.min(max, value + bigStep));
+            onChange(snapSliderValue(value + bigStep, min, max, step));
           } else if (e.key === "Home") {
             e.preventDefault();
             onChange(min);
@@ -166,7 +169,7 @@ export function SliderField({
         className="absolute right-0 top-0 h-[28px] min-w-[28px] px-[10px] text-[10px] font-semibold leading-[1.1] tabular-nums text-white cursor-pointer rounded-[7px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
         style={{ mixBlendMode: "difference" }}
       >
-        {format ? format(value) : value}
+        {format ? format(value) : displayValue}
       </Popover.Trigger>
       </div>
       <Popover.Portal>

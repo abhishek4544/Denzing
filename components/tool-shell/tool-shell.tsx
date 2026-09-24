@@ -11,6 +11,8 @@ type ToolShellProps = {
   onToolSwitcherClick?: () => void;
   onExport?: () => void;
   exportLabel?: string;
+  /** Compact tool-specific controls immediately after Export as. */
+  topbarActions?: React.ReactNode;
   /** Rendered next to the topbar buttons with a 40px gap (e.g. SizeControls). */
   topbarExtras?: React.ReactNode;
   children: React.ReactNode;
@@ -30,6 +32,7 @@ export function ToolShell({
   onToolSwitcherClick,
   onExport,
   exportLabel,
+  topbarActions,
   topbarExtras,
   children,
 }: ToolShellProps) {
@@ -46,6 +49,7 @@ export function ToolShell({
             onToolSwitcherClick={onToolSwitcherClick}
             onExport={onExport}
             exportLabel={exportLabel}
+            actions={topbarActions}
           />
           {topbarExtras}
         </div>

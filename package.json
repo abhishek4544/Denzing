@@ -9,7 +9,10 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm run build",
-    "push": "npm run check && git push"
+    "push": "npm run check && git push",
+    "export:template": "node scripts/build-mesh-strata-template.mjs",
+    "predev": "npm run export:template",
+    "prebuild": "npm run export:template"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
@@ -18,7 +21,9 @@
     "@react-three/postprocessing": "^3.1.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "fflate": "^0.8.3",
     "lucide-react": "^1.34.0",
+    "mediabunny": "^1.59.1",
     "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",

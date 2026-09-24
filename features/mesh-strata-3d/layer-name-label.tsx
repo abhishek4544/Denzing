@@ -6,17 +6,18 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 
 let violetFont: Promise<FontFace> | undefined;
-function loadVioletFont() {
+export function loadVioletFont() {
   violetFont ??= new FontFace("Violet Sans", "url(/fonts/VioletSans-Regular.woff2)").load().then((font) => {
     document.fonts.add(font);
     return font;
-  });
+  }).catch((error) => { violetFont = undefined; throw error; });
   return violetFont;
 }
 
 /** A screen-facing tag anchored to the layer's rightmost projected edge.
  * Rendered inside WebGL so image exports include the same labels. */
-export function LayerNameLabel({ name, layerY, planeSize, fontSize }:  {
+export function LayerNameLabel({ name, layerY, planeSize, fontSize, referenceHeight }:  {
+  referenceHeight?: number;
   name: string;
   fontSize: number;
   layerY: number;
@@ -29,7 +30,8 @@ export function LayerNameLabel({ name, layerY, planeSize, fontSize }:  {
   useEffect(() => {
     let cancelled = false;
     let texture: THREE.CanvasTexture | undefined;
-    void loadVioletFont().then(() => {
+    // Keep labels available with a fallback if the font request fails.
+    void loadVioletFont().catch(() => undefined).then(() => {
       if (cancelled) return;
       const canvas = document.createElement("canvas");
       const context = canvas.getContext("2d");
@@ -64,6 +66,8 @@ export function LayerNameLabel({ name, layerY, planeSize, fontSize }:  {
     const tag = sprite.current;
     if (!tag || !label || size.width === 0 || size.height === 0) return;
     const { point, anchor, pixel } = scratch;
+    const scale = referenceHeight && referenceHeight > 0 ? size.height / referenceHeight : 1;
+    const labelWidth = label.width * scale, labelHeight = label.height * scale;
     const half = planeSize / 2;
     let right = -Infinity;
     for (const x of [-half, half]) {
@@ -74,15 +78,17 @@ export function LayerNameLabel({ name, layerY, planeSize, fontSize }:  {
     }
     tag.visible = anchor.z >= -1 && anchor.z <= 1;
     // Keep tags inside the canvas when the user zooms close to an edge.
-    anchor.x = THREE.MathUtils.clamp(anchor.x + 16 / size.width,
-      -1 + 16 / size.width, 1 - (label.width + 8) * 2 / size.width);
+    anchor.x = THREE.MathUtils.clamp(anchor.x + 16 * scale / size.width,
+      -1 + 16 * scale / size.width, 1 - (labelWidth + 8 * scale) * 2 / size.width);
     anchor.y = THREE.MathUtils.clamp(anchor.y,
-      -1 + (label.height + 8) / size.height, 1 - (label.height + 8) / size.height);
-    pixel.copy(anchor).add(new THREE.Vector3(2 / size.width, 0, 0)).unproject(camera);
+      -1 + (labelHeight + 8 * scale) / size.height, 1 - (labelHeight + 8 * scale) / size.height);
+    pixel.copy(anchor);
+    pixel.x += 2 / size.width;
+    pixel.unproject(camera);
     anchor.unproject(camera);
     const worldPerPixel = pixel.distanceTo(anchor);
     tag.position.copy(anchor);
-    tag.scale.set(label.width * worldPerPixel, label.height * worldPerPixel, 1);
+    tag.scale.set(labelWidth * worldPerPixel, labelHeight * worldPerPixel, 1);
   });
 
   return label ? (

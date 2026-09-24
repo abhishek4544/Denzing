@@ -18,6 +18,7 @@ type TopbarProps = {
   onToolSwitcherClick?: () => void;
   onExport?: () => void;
   exportLabel?: string;
+  actions?: React.ReactNode;
 };
 
 export function Topbar({
@@ -27,6 +28,7 @@ export function Topbar({
   onToolSwitcherClick,
   onExport,
   exportLabel = "Export as",
+  actions,
 }: TopbarProps) {
   const [isToolMenuOpen, setIsToolMenuOpen] = useState(false);
   const toolMenuRef = useRef<HTMLDivElement>(null);
@@ -105,6 +107,7 @@ export function Topbar({
         <span>{exportLabel}</span>
         <ChevronDown className="w-[14px] h-[14px]" strokeWidth={1.75} />
       </button>
+      {actions}
     </header>
   );
 }

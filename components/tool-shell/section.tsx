@@ -6,16 +6,19 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 type SectionProps = {
   title: string;
   defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   children: React.ReactNode;
 };
 
-export function Section({ title, defaultOpen = true, children }: SectionProps) {
-  const [open, setOpen] = useState(defaultOpen);
+export function Section({ title, defaultOpen = true, open: controlledOpen, onOpenChange, children }: SectionProps) {
+  const [localOpen, setOpen] = useState(defaultOpen);
+  const open = controlledOpen ?? localOpen;
   return (
     <div className="bg-card">
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => { setOpen(!open); onOpenChange?.(!open); }}
         aria-expanded={open}
         className="flex w-full items-center justify-between px-3.5 py-[18px] bg-card border-b border-border hover:bg-accent/40 transition-colors"
       >

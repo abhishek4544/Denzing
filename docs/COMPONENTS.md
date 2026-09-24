@@ -41,10 +41,14 @@ Keep component behavior controlled: field values and callbacks belong to the too
 
 ## Component constraints
 
+- `Section` accepts controlled `open` and `onOpenChange` props. Mesh Strata’s ordered inspector uses them for an initially closed, single-open accordion. Other tools retain their existing defaults.
+
+- `ToolShell.topbarActions` places compact tool-specific controls directly after Export as, using the toolbar's 8px spacing. `topbarExtras` retains the separate 40px gap for size controls. Toolbar selects use the shared Select primitives and an accessible label.
 - `CanvasArea` expects content that can size itself within the available stage.
 - `ControlsPanel` is the inspector; sections scroll inside it rather than expanding the app viewport.
 - `FieldRow` standard controls occupy a 177px right column; prefer its `stacked` form only when a control needs the full field width.
 - `SliderField` takes `min`, `max`, and `step`; keep its audio enabled unless a value changes continuously or has an unsuitable auditory consequence.
+- `ToggleField` supports `size="compact"` for a switch graphic at 65% of its original dimensions, retaining a 38×28px click target and its field-row spacing. Mesh Strata uses this variant.
 - All field components require a clear label for accessibility.
 
 ## Mandatory rules for future components

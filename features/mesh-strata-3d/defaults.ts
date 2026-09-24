@@ -76,7 +76,30 @@ export type LayerConcept =
   | "orchestration"
   | "outputs";
 
+export const canvasAspectOptions = [
+  { value: "auto", label: "Auto · Fit stage" },
+  { value: "custom", label: "Custom…" },
+  { value: "16:9", label: "16:9 · Landscape" },
+  { value: "9:16", label: "9:16 · Portrait" },
+  { value: "1:1", label: "1:1 · Square" },
+  { value: "4:3", label: "4:3 · Landscape" },
+  { value: "3:4", label: "3:4 · Portrait" },
+  { value: "4:5", label: "4:5 · Portrait" },
+  { value: "21:9", label: "21:9 · Wide" },
+] as const;
+export type CanvasAspect = typeof canvasAspectOptions[number]["value"];
+export function canvasAspectValue(value: CanvasAspect | undefined, customWidth = 16, customHeight = 9): number | undefined {
+  if (value === "custom") return Number.isFinite(customWidth) && Number.isFinite(customHeight) && customWidth > 0 && customHeight > 0
+    ? Math.min(20, Math.max(0.05, customWidth / customHeight)) : 16 / 9;
+  if (!value || value === "auto" || !canvasAspectOptions.some((option) => option.value === value)) return undefined;
+  const [width, height] = value.split(":").map(Number);
+  return width / height;
+}
+
 export type StrataSettings = {
+  canvasAspect?: CanvasAspect;
+  canvasAspectWidth?: number;
+  canvasAspectHeight?: number;
   layerCount: number;
   /** Per-gap spacing between consecutive layers (length = MAX_LAYERS - 1). */
   layerGaps: number[];
@@ -380,6 +403,9 @@ export type StrataSettings = {
 };
 
 export const defaultStrataSettings: StrataSettings = {
+  canvasAspect: "auto",
+  canvasAspectWidth: 16,
+  canvasAspectHeight: 9,
   layerCount: 5,
   layerGaps: [108,91,91,80,62,62,62,62,62,62,62,62,62],
   layerColors: ["#9897f2","#f1e9da","#f9f0e1","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c"],
@@ -492,8 +518,8 @@ export const defaultStrataSettings: StrataSettings = {
   contentFlowSpeed: 45,
   contentBob: 25,
 
-  platformColor: "#ffd88a",
-  platformScale: 120,
+  platformColor: "#f0e7d5",
+  platformScale: 95,
   platformHeight: 35,
   platformNodeSize: 100,
 
@@ -506,7 +532,7 @@ export const defaultStrataSettings: StrataSettings = {
   foundationBoxGap: 7,
   foundationFillOpacity: 38,
   foundationEdgeOpacity: 13,
-  planeSize: 11.100000000000001,
+  planeSize: 12.8,
   segments: 80,
 
   amplitude: 94,
@@ -536,13 +562,13 @@ export const defaultStrataSettings: StrataSettings = {
 
   frameGlass: false,
   frameGlassEnv: "studio",
-  frameGlassRoughness: 8,
-  frameGlassIOR: 145,
-  frameGlassThickness: 45,
-  frameGlassChromatic: 12,
-  frameGlassAnisotropy: 6,
-  frameGlassDistortion: 0,
-  frameGlassAttenuation: 60,
+  frameGlassRoughness: 0,
+  frameGlassIOR: 100,
+  frameGlassThickness: 1,
+  frameGlassChromatic: 0,
+  frameGlassAnisotropy: 11,
+  frameGlassDistortion: 17,
+  frameGlassAttenuation: 100,
   frameGlassTint: "#ffffff",
   frameGlassBackside: true,
 
@@ -561,8 +587,8 @@ export const defaultStrataSettings: StrataSettings = {
   idleSpeed: 30,
 
   autoRotate: true,
-  rotateSpeed: 18,
-  fov: 26,
+  rotateSpeed: 21,
+  fov: 29,
   isoView: false,
 
   bloomIntensity: 2,

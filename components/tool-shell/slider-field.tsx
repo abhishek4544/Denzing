@@ -111,7 +111,7 @@ export function SliderField({
             onChange(max);
           }
         }}
-        className="relative h-[40px] w-full rounded-[10px] bg-muted overflow-hidden cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        className="relative h-[28px] w-full rounded-[7px] bg-muted overflow-hidden cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
       >
         {/* Black fill (dynamic width) */}
         <div
@@ -139,7 +139,7 @@ export function SliderField({
         />
         {/* Readout */}
         <span
-          className="absolute right-[14px] top-1/2 -translate-y-1/2 text-[12px] font-semibold leading-[1.1] tabular-nums text-white pointer-events-none"
+          className="absolute right-[10px] top-1/2 -translate-y-1/2 text-[10px] font-semibold leading-[1.1] tabular-nums text-white pointer-events-none"
           style={{ mixBlendMode: "difference" }}
         >
           {format ? format(value) : value}

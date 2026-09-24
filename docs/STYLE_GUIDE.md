@@ -32,8 +32,9 @@ Use Geist Sans as the default UI family. Inter Tight is available for tool-speci
 | Panel title | 18px | 600 | Uppercase, tight tracking |
 | Tool selector / export | 14px | 500 | Top bar controls |
 | Section title / reset / dimensions | 12px | 500 | Standard utility label |
-| Field values | 11px | 500 | Inputs and selects |
-| Field labels / numeric readouts | 10px | 500 | Compact control metadata |
+| Field values | 10px | 500 | Inputs, selects, sliders, buttons |
+| Field labels | 10px | 500 | Row labels |
+| Numeric readouts / metadata | 9px | 500 | Tightest inputs and byline |
 | Author/byline | 10px | 500 | Muted foreground |
 
 Use tabular numerals for dimensions, percentages, and slider values. Keep tracking subtly tight (`-0.1px` to `-0.18px`) only where it is already used by the baseline components.
@@ -42,7 +43,7 @@ Use tabular numerals for dimensions, percentages, and slider values. Keep tracki
 
 - Main panel: 10px radius, 1px border.
 - Buttons: 8px radius.
-- Compact input controls and sliders: 6px radius, 30px height.
+- Compact input controls and sliders: 7px radius, 28px height (topbar inputs: 5px radius, 21px height).
 - Use `border-border` for container boundaries and `#F2F2F3` for fine input boundaries where the component already establishes that token.
 - Do not use `shadow-sm`, `shadow-md`, or visually strong custom shadows on persistent layout surfaces. The tiny toggle-thumb shadow is an intentional exception because it conveys its physical control state.
 

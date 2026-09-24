@@ -94,6 +94,8 @@ export type ExplorerSettings = {
   /** Edge styling. */
   edgeThickness: number;
   edgeOpacity: number;
+  ringThickness: number;
+  ringOpacity: number;
   edgeCurvature: number;
   edgeGlow: number;
   edgeFlow: boolean;
@@ -142,7 +144,7 @@ export type ExplorerSettings = {
 };
 
 export const defaultExplorerSettings: ExplorerSettings = {
-  viewMode: "constellation-2d",
+  viewMode: "burst-3d",
 
   layers: {
     sources: true,
@@ -163,6 +165,8 @@ export const defaultExplorerSettings: ExplorerSettings = {
 
   edgeThickness: 1,
   edgeOpacity: 55,
+  ringThickness: 1,
+  ringOpacity: 40,
   edgeCurvature: 24,
   edgeGlow: 30,
   edgeFlow: false,

@@ -355,6 +355,23 @@ export function OntologyExplorer3DTool() {
           />
         </Section>
 
+        <Section title="Rings">
+          <SliderField
+            label="Stroke"
+            value={settings.ringThickness}
+            min={0}
+            max={20}
+            onChange={(value) => update("ringThickness", value)}
+          />
+          <SliderField
+            label="Opacity"
+            value={settings.ringOpacity}
+            min={0}
+            max={100}
+            onChange={(value) => update("ringOpacity", value)}
+          />
+        </Section>
+
         <Section title="Camera & Layout">
           <SelectField
             label="Layout"

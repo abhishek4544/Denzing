@@ -15,7 +15,7 @@ export function SectionButton({
       type="button"
       {...props}
       className={cn(
-        "w-full h-10 rounded-md potatoo-field text-[15px] font-medium text-foreground",
+        "w-full h-[28px] rounded-[7px] potatoo-field text-[10px] font-medium text-foreground",
         "hover:bg-accent transition-colors",
         "focus-visible:outline-none",
         className,

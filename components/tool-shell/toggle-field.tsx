@@ -19,7 +19,7 @@ export function ToggleField({
   const playTick = useTick(tick);
   return (
     <FieldRow label={label}>
-      <div className="flex justify-end items-center pr-2 h-[40px]">
+      <div className="flex justify-end items-center pr-2 h-[28px]">
         <button
           type="button"
           role="switch"

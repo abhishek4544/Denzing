@@ -45,7 +45,7 @@ export function SelectField<Value extends string>({
         }}
       >
         <SelectTrigger
-          className="!bg-muted !border-transparent !h-[40px] !w-full !rounded-[10px] !px-3.5 !py-0 !text-[12px] !font-medium !text-foreground !leading-[1.1] shadow-none"
+          className="!bg-muted !border-transparent !h-[28px] !w-full !rounded-[7px] !px-3.5 !py-0 !text-[10px] !font-medium !text-foreground !leading-[1.1] shadow-none"
           data-slot="select-trigger"
         >
           <SelectValue placeholder={placeholder} />
@@ -55,7 +55,7 @@ export function SelectField<Value extends string>({
             <SelectItem
               key={o.value}
               value={o.value}
-              className="text-[12px]"
+              className="text-[10px]"
               onPointerEnter={
                 onOptionHover ? () => onOptionHover(o.value) : undefined
               }

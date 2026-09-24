@@ -171,7 +171,8 @@ function LayerRings({
   visibleLayers: LayerId[];
   settings: ExplorerSettings;
 }) {
-  const width = Math.max(0.35, settings.edgeThickness * 0.35);
+  const width = Math.max(0.35, settings.ringThickness * 0.35);
+  const baseOpacity = settings.ringOpacity / 100;
   return (
     <group>
       {RING_ORDER_OUTWARD.filter((l) => visibleLayers.includes(l)).map(
@@ -184,7 +185,7 @@ function LayerRings({
                 color="#ffffff"
                 lineWidth={width}
                 transparent
-                opacity={0.35 + (i % 2) * 0.08}
+                opacity={baseOpacity * (1 + (i % 2) * 0.22)}
                 depthWrite={false}
                 toneMapped={false}
               />

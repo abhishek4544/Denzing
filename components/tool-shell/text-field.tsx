@@ -24,7 +24,7 @@ export function TextField({
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full h-[30px] rounded-[6px] bg-muted px-3.5 text-[11px] font-medium text-foreground leading-[1.1] outline-none focus:ring-2 focus:ring-ring/40"
+        className="w-full h-[21px] rounded-[5px] bg-muted px-3.5 text-[9px] font-medium text-foreground leading-[1.1] outline-none focus:ring-2 focus:ring-ring/40"
       />
     </FieldRow>
   );

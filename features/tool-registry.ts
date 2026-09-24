@@ -18,6 +18,13 @@ export const tools: readonly ToolDefinition[] = [
       "Hyper-realistic 3D node-link view of the Revenue ontology fixture.",
     href: "/tools/ontology-explorer-3d",
   },
+  {
+    id: "mesh-strata-3d",
+    label: "Mesh Strata 3D",
+    description:
+      "Stacked wireframe wave layers with a crimson core in a gold cube frame.",
+    href: "/tools/mesh-strata-3d",
+  },
 ];
 
 export const defaultTool = tools[0];

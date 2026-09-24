@@ -305,32 +305,6 @@ function ChildScatter({
 }) {
   const children = useMemo(() => generateChildren(node, density), [node, density]);
 
-  const boxEdgesGeom = useMemo(() => {
-    const positions: number[] = [];
-    const box = new THREE.BoxGeometry(1, 1, 1);
-    const edges = new THREE.EdgesGeometry(box);
-    const verts = (edges.attributes.position as THREE.BufferAttribute).array as Float32Array;
-    for (const c of children) {
-      const [cx, cy, cz] = c.position;
-      const s = c.size;
-      for (let v = 0; v < verts.length; v += 3) {
-        positions.push(
-          cx + verts[v] * s,
-          cy + verts[v + 1] * s,
-          cz + verts[v + 2] * s,
-        );
-      }
-    }
-    box.dispose();
-    edges.dispose();
-    const g = new THREE.BufferGeometry();
-    g.setAttribute(
-      "position",
-      new THREE.BufferAttribute(new Float32Array(positions), 3),
-    );
-    return g;
-  }, [children]);
-
   const stalkGeom = useMemo(() => {
     const positions: number[] = [];
     for (const c of children) {
@@ -379,15 +353,28 @@ function ChildScatter({
           toneMapped={false}
         />
       </lineSegments>
-      <lineSegments geometry={boxEdgesGeom}>
-        <lineBasicMaterial
-          color="#ffffff"
-          transparent
-          opacity={0.6 * opacity}
-          depthWrite={false}
-          toneMapped={false}
-        />
-      </lineSegments>
+      {children.map((c, i) => (
+        <group key={`child-${i}`} position={c.position}>
+          <mesh>
+            <boxGeometry args={[c.size, c.size, c.size]} />
+            <meshBasicMaterial
+              color="#ffffff"
+              transparent
+              opacity={0.6 * opacity}
+              toneMapped={false}
+            />
+          </mesh>
+          <mesh position={[0, c.size * 0.95, 0]}>
+            <sphereGeometry args={[c.size * 0.38, 12, 12]} />
+            <meshBasicMaterial
+              color="#ffffff"
+              transparent
+              opacity={0.75 * opacity}
+              toneMapped={false}
+            />
+          </mesh>
+        </group>
+      ))}
       {twinkleTargets.map((p, i) => (
         <mesh
           key={i}
@@ -536,33 +523,13 @@ function HubNode({
     <group ref={groupRef} position={node.position}>
       <mesh>
         <boxGeometry args={[size, size, size]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        <Edges color="#ffffff" lineWidth={1.15} threshold={15}>
-          <lineBasicMaterial
-            color="#ffffff"
-            transparent
-            opacity={opacity}
-            depthWrite={false}
-            toneMapped={false}
-          />
-        </Edges>
+        <meshBasicMaterial
+          color="#ffffff"
+          transparent
+          opacity={opacity}
+          toneMapped={false}
+        />
       </mesh>
-
-      {kindScale >= 1.15 ? (
-        <mesh>
-          <boxGeometry args={[size * 1.55, size * 1.55, size * 1.55]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-          <Edges color="#ffffff" lineWidth={0.7} threshold={15}>
-            <lineBasicMaterial
-              color="#ffffff"
-              transparent
-              opacity={opacity * 0.4}
-              depthWrite={false}
-              toneMapped={false}
-            />
-          </Edges>
-        </mesh>
-      ) : null}
 
       {showOrbitRings ? (
         <OrbitRings size={size} opacity={opacity} seed={hashId(node.id)} />

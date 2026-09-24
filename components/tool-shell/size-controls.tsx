@@ -69,15 +69,15 @@ function DimensionField({
       <span className="p-1 text-[12px] font-semibold text-black tracking-[-0.12px]">
         {label}
       </span>
-      <div className="flex items-center h-[30px] px-[10px] rounded-[6px] bg-[#f2f2f7] border border-[#f2f2f3]">
+      <div className="flex items-center h-[21px] px-[10px] rounded-[5px] bg-[#f2f2f7] border border-[#f2f2f3]">
         <input
           type="number"
           value={value}
           onChange={(e) => onChange(Number(e.target.value))}
           aria-label={`${label} in ${unit}`}
-          className="w-[32px] mr-1 bg-transparent outline-none text-right text-[12px] font-medium text-black leading-[1.1] tabular-nums appearance-none [-moz-appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          className="w-[32px] mr-1 bg-transparent outline-none text-right text-[10px] font-medium text-black leading-[1.1] tabular-nums appearance-none [-moz-appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
-        <span className="text-[12px] font-medium text-black leading-[1.1]">
+        <span className="text-[10px] font-medium text-black leading-[1.1]">
           {unit}
         </span>
       </div>

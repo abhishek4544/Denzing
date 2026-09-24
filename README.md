@@ -19,6 +19,22 @@ npm run check
 
 This runs linting, type checking, and the production build. Run it before sharing or publishing the starter.
 
+## Push updates to GitHub and Vercel
+
+Commit your changes, then use the checked push command:
+
+```bash
+git add <files-you-changed>
+git commit -m "Describe your change"
+npm run push
+```
+
+`npm run push` runs all quality checks before pushing the current branch. If a
+check fails, it stops before the push so you can fix the error locally. Only
+committed changes are pushed. Vercel's GitHub integration deploys updates to
+`main` automatically; other branches receive preview deployments when enabled
+in the Vercel project.
+
 ## Add a tool
 
 1. Add the tool definition to `features/tool-registry.ts`.

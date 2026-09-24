@@ -196,11 +196,7 @@ export function OntologyExplorer3DTool() {
                 )}
               </Canvas>
               {settings.viewMode === "burst-3d" ? (
-                <BurstHud
-                  nodeCount={model.nodeOrder.length}
-                  edgeCount={model.edgeOrder.length}
-                  viewMode="BURST"
-                />
+                <BurstHud />
               ) : (
                 <CosmosHud
                   nodeCount={model.nodeOrder.length}

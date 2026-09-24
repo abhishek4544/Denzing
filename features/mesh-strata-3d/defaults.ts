@@ -65,7 +65,15 @@ export const layerConceptOptions = [
   { value: "sparkle", label: "Sparkle" },
 ] as const;
 
-export type LayerConcept = (typeof layerConceptOptions)[number]["value"];
+// The renderer also supports the original concept meshes, although the
+// inspector now offers only the shape-based concepts above.
+export type LayerConcept =
+  | (typeof layerConceptOptions)[number]["value"]
+  | "data"
+  | "ontology"
+  | "logic"
+  | "orchestration"
+  | "outputs";
 
 export type StrataSettings = {
   layerCount: number;

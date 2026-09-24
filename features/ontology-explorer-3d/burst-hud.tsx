@@ -4,11 +4,7 @@ import { useEffect, useState } from "react";
 
 /** Minimal HUD for the burst view — corner brackets, subtle scanline, grain.
  *  No decorative text; the ontology labels do all the talking. */
-export function BurstHud(_: {
-  nodeCount: number;
-  edgeCount: number;
-  viewMode: string;
-}) {
+export function BurstHud() {
   const [clock, setClock] = useState(0);
 
   useEffect(() => {

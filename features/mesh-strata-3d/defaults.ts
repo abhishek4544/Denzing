@@ -95,6 +95,8 @@ export type StrataSettings = {
   layerNames: string[];
   /** Per-layer escape height for "cloud" concept (0..100). */
   layerEscapeHeight: number[];
+  /** Per-layer full sparkle slab thickness; null inherits sparkleHeight for older presets. */
+  layerSparkleHeight: (number | null)[];
 
   /** Cloud dot size (world units × 0.001). */
   cloudDotSize: number;
@@ -154,8 +156,13 @@ export type StrataSettings = {
   sparkleSpin: number;
   /** Face the camera (billboard) vs. lie flat on the layer. */
   sparkleBillboard: boolean;
-  /** Extrusion depth as % of planeSize — 0 = flat cutout, higher = raised relief. */
+  /** Full layer extrusion height — 0 = flat plate, higher = thicker slab. */
   sparkleHeight: number;
+  sparkleGlass: boolean;
+  sparkleGlassTint: string;
+  sparkleGlassRoughness: number;
+  sparkleGlassIOR: number;
+  sparkleGlassReflection: number;
   /** Bevel size as % of extrude height (rounds the top edges). */
   sparkleBevel: number;
   /**
@@ -274,63 +281,60 @@ export type StrataSettings = {
   vignette: number;
 };
 
-const DEFAULT_MESH_COLOR = "#ffc35c";
-
 export const defaultStrataSettings: StrataSettings = {
   layerCount: 5,
-  layerGaps: [79, 79, 76, 88, 62, 62, 62, 62, 62, 62, 62, 62, 62],
-  layerColors: Array(MAX_LAYERS).fill(DEFAULT_MESH_COLOR),
-  layerAmplitudes: Array(MAX_LAYERS).fill(82),
-  layerWaveScales: Array(MAX_LAYERS).fill(44),
-  layerBaseOpacity: [35, 24, 5, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35],
-  layerContent: Array.from(
-    { length: MAX_LAYERS },
-    () => "none",
-  ) as ContentType[],
-  layerConcept: Array.from({ length: MAX_LAYERS }, (_, i) =>
-    i === 2 ? "box" : "uniform",
-  ) as LayerConcept[],
-  layerNames: Array.from({ length: MAX_LAYERS }, (_, i) =>
-    i === 2 ? "Data Foundation" : "",
-  ),
-  layerEscapeHeight: Array(MAX_LAYERS).fill(35),
+  layerGaps: [76, 93, 93, 80, 62, 62, 62, 62, 62, 62, 62, 62, 62],
+  layerColors: ["#f1e9da", "#9897f2", "#ffc35c", "#f9f0e1", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c"],
+  layerAmplitudes: [82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82],
+  layerWaveScales: [44, 44, 44, 44, 44, 44, 44, 44, 44, 44, 44, 44, 44, 44],
+  layerBaseOpacity: [35, 35, 24, 10, 45, 35, 35, 35, 35, 35, 35, 35, 35, 35],
+  layerContent: ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
+  layerConcept: ["agent", "sparkle", "cloud", "box", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform"],
+  layerNames: ["", "", "", "Data Foundation", "", "", "", "", "", "", "", "", "", ""],
+  layerEscapeHeight: [35, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35],
+  layerSparkleHeight: Array(MAX_LAYERS).fill(null),
 
-  cloudDotSize: 0.75,
-  cloudColorB: "#a68cff",
-  cloudColorC: "#ff6db3",
-  cloudDensity: 120,
-  cloudHeight: 100,
-  escapeSpeed: 30,
-  escapeJitter: 30,
+  cloudDotSize: 0.5,
+  cloudColorB: "#fffafa",
+  cloudColorC: "#ddd5fb",
+  cloudDensity: 110,
+  cloudHeight: 71,
+  escapeSpeed: 100,
+  escapeJitter: 100,
 
-  agentGridN: 16,
-  agentNodeSize: 20,
-  agentEdgeOpacity: 14,
-  agentSignalCount: 40,
-  agentSignalSpeed: 35,
+  agentGridN: 15,
+  agentNodeSize: 18,
+  agentEdgeOpacity: 23,
+  agentSignalCount: 300,
+  agentSignalSpeed: 200,
   agentSignalLength: 60,
-  agentSignalThickness: 25,
+  agentSignalThickness: 6,
   agentSignalColor: "#ffffff",
   agentNodeColor: "#ffffff",
   agentDecayLength: 100,
-  agentRefractory: 8,
+  agentRefractory: 100,
   agentJunctionSplit: false,
-  agentSpawnRate: 22,
-  agentMinAmplitude: 4,
+  agentSpawnRate: 100,
+  agentMinAmplitude: 50,
 
-  sparkleSize: 30,
-  sparklePinch: 18,
-  sparkleColor: "#ffffff",
-  sparklePulse: 15,
-  sparklePulseSpeed: 20,
-  sparkleSpin: 0,
+  sparkleSize: 80,
+  sparklePinch: 32,
+  sparkleColor: "#000000",
+  sparklePulse: 97,
+  sparklePulseSpeed: 64,
+  sparkleSpin: 56,
   sparkleBillboard: false,
-  sparkleHeight: 8,
-  sparkleBevel: 25,
-  sparkleSubtract: false,
-  sparkleWave: 40,
-  sparkleWaveSpeed: 30,
-  sparkleWaveHeight: 100,
+  sparkleHeight: 62,
+  sparkleGlass: true,
+  sparkleGlassTint: "#ffffff",
+  sparkleGlassRoughness: 6,
+  sparkleGlassIOR: 150,
+  sparkleGlassReflection: 100,
+  sparkleBevel: 10,
+  sparkleSubtract: true,
+  sparkleWave: 77,
+  sparkleWaveSpeed: 46,
+  sparkleWaveHeight: 173,
   contentDensity: 30,
   contentSize: 30,
   contentOpacity: 90,
@@ -364,7 +368,7 @@ export const defaultStrataSettings: StrataSettings = {
   lineOpacity: 100,
   lineWidth: 1,
 
-  meshColor: DEFAULT_MESH_COLOR,
+  meshColor: "#ffc35c",
   coreColor: "#f2c16e",
   edgeColor: "#fbe9f7",
   frameColor: "#f0eff5",
@@ -406,7 +410,7 @@ export const defaultStrataSettings: StrataSettings = {
   idleScale: 42,
   idleSpeed: 30,
 
-  autoRotate: false,
+  autoRotate: true,
   rotateSpeed: 18,
   fov: 26,
   isoView: false,

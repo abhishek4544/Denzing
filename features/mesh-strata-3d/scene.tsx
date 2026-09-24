@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
-import { Environment, MeshTransmissionMaterial } from "@react-three/drei";
+import { Environment, Lightformer, MeshTransmissionMaterial } from "@react-three/drei";
 import {
   Bloom,
   DepthOfField,
@@ -2506,16 +2506,40 @@ function buildSparkleShape(radius: number, pinchFrac: number): THREE.Shape {
   return shape;
 }
 
-/** Flat or extruded sparkle geometry with optional bevel. */
+/** Full layer slab, optionally pierced by a sparkle-shaped through-hole. */
 function buildSparkleGeometry(
+  size: number,
   radius: number,
   pinchFrac: number,
   depth: number,
   bevelFrac: number,
+  subtract: boolean,
+  holeRotation = 0,
+  holeScale = 1,
 ): THREE.BufferGeometry {
-  const shape = buildSparkleShape(radius, pinchFrac);
+  const half = size / 2;
+  const shape = new THREE.Shape();
+  shape.moveTo(-half, -half);
+  shape.lineTo(-half, half);
+  shape.lineTo(half, half);
+  shape.lineTo(half, -half);
+  shape.closePath();
+  // Leave a small rim even at maximum cutout size, so the slab stays closed.
+  const holeRadius = Math.min(radius * holeScale, half * 0.94);
+  if (subtract) {
+    const points = buildSparkleShape(holeRadius, pinchFrac).getPoints(24);
+    const cs = Math.cos(holeRotation);
+    const sn = Math.sin(holeRotation);
+    shape.holes.push(new THREE.Path(points.map(({ x, y }) =>
+      new THREE.Vector2(x * cs - y * sn, x * sn + y * cs),
+    )));
+  }
   if (depth <= 0.001) return new THREE.ShapeGeometry(shape, 48);
-  const bevelSize = Math.max(0, Math.min(0.45, bevelFrac)) * depth * 0.5;
+  const bevelSize = Math.min(
+    Math.max(0, Math.min(0.45, bevelFrac)) * depth * 0.5,
+    (half - holeRadius) * 0.25,
+    size * 0.015,
+  );
   const geom = new THREE.ExtrudeGeometry(shape, {
     depth,
     bevelEnabled: bevelSize > 0.001,
@@ -2525,7 +2549,6 @@ function buildSparkleGeometry(
     curveSegments: 32,
     steps: 1,
   });
-  // Recenter along Z so extrusion is symmetric around the shape's plane.
   geom.translate(0, 0, -depth / 2);
   geom.computeVertexNormals();
   return geom;
@@ -2543,6 +2566,11 @@ function SparkleLayer({
   spin,
   billboard,
   height,
+  glass,
+  glassTint,
+  glassRoughness,
+  glassIOR,
+  glassReflection,
   bevel,
   subtract,
   wave,
@@ -2563,6 +2591,11 @@ function SparkleLayer({
   spin: number;
   billboard: boolean;
   height: number;
+  glass: boolean;
+  glassTint: string;
+  glassRoughness: number;
+  glassIOR: number;
+  glassReflection: number;
   bevel: number;
   subtract: boolean;
   wave: number;
@@ -2577,9 +2610,19 @@ function SparkleLayer({
 
   const geometry = useMemo(() => {
     const R = (sparkleSize / 100) * size * 0.5;
-    return buildSparkleGeometry(R, sparklePinch / 100, depth, bevel / 100);
-  }, [sparkleSize, sparklePinch, size, depth, bevel]);
+    return buildSparkleGeometry(size, R, sparklePinch / 100, depth, bevel / 100, subtract);
+  }, [sparkleSize, sparklePinch, size, depth, bevel, subtract]);
   useEffect(() => () => geometry.dispose(), [geometry]);
+  const cutoutMotion = useMemo(() => ({
+    geometry,
+    angle: 0,
+    elapsed: 0,
+    scale: 1,
+  }), [geometry]);
+  useEffect(() => () => {
+    if (cutoutMotion.geometry !== geometry) cutoutMotion.geometry.dispose();
+  }, [cutoutMotion, geometry]);
+
 
   // The material has a per-instance shader-uniform ref so useFrame can push
   // time / wave params without rebuilding the material every frame.
@@ -2670,11 +2713,26 @@ function SparkleLayer({
     const t = state.clock.elapsedTime;
     const pulseAmp = (pulse / 100) * 0.35;
     const scale = 1 + pulseAmp * Math.sin(t * (pulseSpeed / 100) * 6);
-    m.scale.setScalar(scale);
-    if (spin > 0 && !billboard) {
-      m.rotation.z += (spin / 100) * 0.6 * delta;
+    // Animate only the inner contour; the outer slab stays fixed. Retriangulate
+    // the caps with the hole so rotation cannot create crossing triangles.
+    m.scale.setScalar(1);
+    m.rotation.z = 0;
+    cutoutMotion.elapsed += delta;
+    const angleStep = (spin / 100) * (Math.PI * 2) / 6 * delta;
+    cutoutMotion.angle += angleStep;
+    if (subtract && cutoutMotion.elapsed >= 1 / 30 &&
+        (angleStep !== 0 || Math.abs(scale - cutoutMotion.scale) > 0.001)) {
+      const next = buildSparkleGeometry(
+        size, (sparkleSize / 100) * size * 0.5, sparklePinch / 100,
+        depth, bevel / 100, true, cutoutMotion.angle, scale,
+      );
+      m.geometry = next;
+      if (cutoutMotion.geometry !== geometry) cutoutMotion.geometry.dispose();
+      cutoutMotion.geometry = next;
+      cutoutMotion.scale = scale;
+      cutoutMotion.elapsed = 0;
     }
-    if (billboard && isFlat) {
+    if (billboard && isFlat && !subtract) {
       const cam = state.camera;
       g.lookAt(cam.position);
     } else {
@@ -2695,21 +2753,43 @@ function SparkleLayer({
     wu.uWaveSeed.value = seed;
   });
 
-  // Sink the sparkle into the layer when Subtract is on — the shape's top
-  // sits flush with the layer surface and the volume extends downward,
-  // reading as a carved relief. Otherwise the volume rises above the
-  // surface (positive relief).
-  const yOffset = isFlat ? 0 : subtract ? -depth / 2 : depth / 2;
+  // The entire slab extends downward from its layer surface. The sparkle
+  // is an empty through-hole, never a filled object inside the slab.
+  const yOffset = isFlat ? 0 : -depth / 2;
 
   return (
     <group ref={groupRef} position={[0, layerY + centerY + yOffset, 0]}>
       <mesh
+        key={glass ? "glass" : "solid"}
         ref={meshRef}
         geometry={geometry}
-        material={material}
+        material={glass ? undefined : material}
         castShadow={false}
         receiveShadow={false}
-      />
+      >
+        {glass && (
+          <MeshTransmissionMaterial
+            resolution={512}
+            samples={6}
+            backside={!isFlat}
+            backsideThickness={Math.max(0.01, depth)}
+            thickness={Math.max(0.01, depth)}
+            transmission={1}
+            roughness={glassRoughness / 100}
+            ior={glassIOR / 100}
+            color="#ffffff"
+            attenuationColor={glassTint}
+            attenuationDistance={Math.max(0.5, size * 0.5)}
+            envMapIntensity={glassReflection / 100}
+            clearcoat={1}
+            clearcoatRoughness={0.03}
+            chromaticAberration={0.015}
+            anisotropicBlur={0.03}
+            distortion={0}
+            temporalDistortion={0}
+          />
+        )}
+      </mesh>
     </group>
   );
 }
@@ -3097,6 +3177,12 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
     sparkleSpin,
     sparkleBillboard,
     sparkleHeight,
+    sparkleGlass,
+    sparkleGlassTint,
+    sparkleGlassRoughness,
+    sparkleGlassIOR,
+    sparkleGlassReflection,
+    layerSparkleHeight,
     sparkleBevel,
     sparkleSubtract,
     sparkleWave,
@@ -3477,27 +3563,13 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
           const content = isBox
             ? boxContentByLayer[idx]
             : contentByLayer[idx];
-          // Base wave always renders for uniform & box concepts. Sparkle
-          // renders the wave too when its subtract-mode is on, so the wave
-          // can carry the punched-through sparkle silhouette. Cloud/Agent
-          // replace the wave entirely.
+          // Sparkle owns its complete slab and cutout geometry.
           const showBaseMesh =
-            concept === "uniform" || isBox || (isSparkle && sparkleSubtract);
+            concept === "uniform" || isBox;
           const hasContentOnTop =
             isBox || (concept === "uniform" && rawContentType !== "none");
           const baseOpacityOverride = hasContentOnTop
             ? ((layerBaseOpacity[idx] ?? 35) / 100) * (lineOpacity / 100)
-            : undefined;
-          const sparkleCut = isSparkle && sparkleSubtract
-            ? {
-                centerXZ: [0, 0] as [number, number],
-                radius: (sparkleSize / 100) * planeSize * 0.5,
-                pinch: sparklePinch / 100,
-                // Reuse the Spin slider to drive hole rotation. Full slider
-                // (100) ≈ one revolution per 6 s, which reads as a steady
-                // "round spin" without spinning so fast it strobes.
-                spinRate: (sparkleSpin / 100) * (Math.PI * 2) / 6,
-              }
             : undefined;
           return (
             <group key={idx}>
@@ -3507,10 +3579,9 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
                   layerT={t}
                   sharedUniforms={sharedUniforms}
                   opacityOverride={baseOpacityOverride}
-                  sparkleCut={sparkleCut}
                 />
               )}
-              {isSparkle && !sparkleSubtract && (
+              {isSparkle && (
                 <SparkleLayer
                   layerY={layer.y}
                   layerT={t}
@@ -3522,7 +3593,12 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
                   pulseSpeed={sparklePulseSpeed}
                   spin={sparkleSpin}
                   billboard={sparkleBillboard}
-                  height={sparkleHeight}
+                  height={layerSparkleHeight[idx] ?? sparkleHeight}
+                  glass={sparkleGlass}
+                  glassTint={sparkleGlassTint}
+                  glassRoughness={sparkleGlassRoughness}
+                  glassIOR={sparkleGlassIOR}
+                  glassReflection={sparkleGlassReflection}
                   bevel={sparkleBevel}
                   subtract={sparkleSubtract}
                   wave={sparkleWave}
@@ -3631,8 +3707,7 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
         )}
         {layerConcept
           .slice(0, layerCount)
-          .some((c) => c === "sparkle") &&
-          sparkleHeight > 0 && (
+          .some((c, idx) => c === "sparkle" && (layerSparkleHeight[idx] ?? sparkleHeight) > 0) && (
             <>
               <hemisphereLight args={["#ffffff", "#404060", 0.9]} />
               <directionalLight
@@ -3642,6 +3717,14 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
               />
             </>
           )}
+        {sparkleGlass && !frameGlass && layerConcept.slice(0, layerCount).includes("sparkle") && (
+          <Environment resolution={256} frames={1}>
+            <Lightformer position={[0, 8, 0]} scale={[12, 5]} intensity={4} />
+            <Lightformer position={[-8, 3, 5]} scale={[3, 10]} intensity={5} />
+            <Lightformer position={[7, 2, -5]} scale={[2, 10]} intensity={6} color="#dce8ff" />
+            <Lightformer position={[0, -5, 4]} scale={[10, 3]} intensity={2} color="#fff0da" />
+          </Environment>
+        )}
         {frameGlass && (
           <>
             <Environment preset={frameGlassEnv as GlassEnv} />

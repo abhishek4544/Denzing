@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentRef } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { GripVertical } from "lucide-react";
@@ -61,6 +61,7 @@ function ExposureSync() {
 export function MeshStrata3DTool() {
   const [settings, setSettings] = useState<StrataSettings>(defaultStrataSettings);
   const canvasHostRef = useRef<HTMLDivElement>(null);
+  const orbitControlsRef = useRef<ComponentRef<typeof OrbitControls>>(null);
 
   const update = useCallback(
     <K extends keyof StrataSettings>(key: K, value: StrataSettings[K]) => {
@@ -69,7 +70,10 @@ export function MeshStrata3DTool() {
     [],
   );
 
-  const onReset = useCallback(() => setSettings(defaultStrataSettings), []);
+  const onReset = useCallback(() => {
+    setSettings(defaultStrataSettings);
+    orbitControlsRef.current?.reset();
+  }, []);
 
   const onSavePreset = useCallback(() => {
     downloadPreset<StrataSettings>("mesh-strata-3d", settings);
@@ -153,6 +157,7 @@ export function MeshStrata3DTool() {
         layerWaveScales: move(current.layerWaveScales),
         layerNames: move(current.layerNames),
         layerEscapeHeight: move(current.layerEscapeHeight),
+        layerSparkleHeight: move(current.layerSparkleHeight),
       };
     });
   }, []);
@@ -205,8 +210,8 @@ export function MeshStrata3DTool() {
     if (gl instanceof HTMLCanvasElement) exportStrataScene(gl);
   }, []);
 
-  // Isometric-ish camera framing OR frontal near-horizontal view.
-  const camDistance = 22;
+  // Pulled-back framing leaves breathing room around the full stack.
+  const camDistance = 45;
   const camPos: [number, number, number] = settings.isoView
     ? [camDistance * 0.72, camDistance * 0.62, camDistance * 0.72]
     : [camDistance * 0.02, camDistance * 0.09, camDistance * 1.0];
@@ -248,6 +253,7 @@ export function MeshStrata3DTool() {
             <ExposureSync />
             <CameraSync fov={settings.fov} iso={settings.isoView} />
             <OrbitControls
+              ref={orbitControlsRef}
               enableDamping
               dampingFactor={0.08}
               minDistance={10}
@@ -362,6 +368,21 @@ export function MeshStrata3DTool() {
                     min={0}
                     max={100}
                     onChange={(v) => setLayerEscapeHeight(i, v)}
+                  />
+                </div>
+              )}
+              {settings.layerConcept[i] === "sparkle" && (
+                <div className="px-2 pb-1">
+                  <SliderField
+                    label="Height"
+                    value={settings.layerSparkleHeight[i] ?? settings.sparkleHeight}
+                    min={0}
+                    max={100}
+                    onChange={(value) => setSettings((current) => {
+                      const next = current.layerSparkleHeight.slice();
+                      next[i] = value;
+                      return { ...current, layerSparkleHeight: next };
+                    })}
                   />
                 </div>
               )}
@@ -730,6 +751,55 @@ export function MeshStrata3DTool() {
         </Section>
 
         <Section title="Sparkle">
+          <SliderField
+            label="Layer Height (all)"
+            value={settings.sparkleHeight}
+            min={0}
+            max={100}
+            onChange={(value) => setSettings((current) => ({
+              ...current,
+              sparkleHeight: value,
+              layerSparkleHeight: Array(MAX_LAYERS).fill(null),
+            }))}
+          />
+          <ToggleField
+            label="Glass"
+            checked={settings.sparkleGlass}
+            onCheckedChange={(v) => update("sparkleGlass", v)}
+          />
+          {settings.sparkleGlass && (
+            <>
+              <ColorField
+                label="Glass Tint"
+                color={settings.sparkleGlassTint}
+                opacity={100}
+                onColorChange={(v) => update("sparkleGlassTint", v)}
+                onOpacityChange={() => {}}
+                showPipette={false}
+              />
+              <SliderField
+                label="Roughness"
+                value={settings.sparkleGlassRoughness}
+                min={0}
+                max={100}
+                onChange={(v) => update("sparkleGlassRoughness", v)}
+              />
+              <SliderField
+                label="Refraction (IOR)"
+                value={settings.sparkleGlassIOR}
+                min={100}
+                max={240}
+                onChange={(v) => update("sparkleGlassIOR", v)}
+              />
+              <SliderField
+                label="Reflection"
+                value={settings.sparkleGlassReflection}
+                min={0}
+                max={200}
+                onChange={(v) => update("sparkleGlassReflection", v)}
+              />
+            </>
+          )}
           <ColorField
             label="Color"
             color={settings.sparkleColor}
@@ -767,18 +837,11 @@ export function MeshStrata3DTool() {
             onChange={(v) => update("sparklePulseSpeed", v)}
           />
           <SliderField
-            label="Spin (mesh · hole)"
+            label="Spin (cutout)"
             value={settings.sparkleSpin}
             min={0}
             max={100}
             onChange={(v) => update("sparkleSpin", v)}
-          />
-          <SliderField
-            label="Height"
-            value={settings.sparkleHeight}
-            min={0}
-            max={100}
-            onChange={(v) => update("sparkleHeight", v)}
           />
           <SliderField
             label="Bevel"
@@ -788,10 +851,12 @@ export function MeshStrata3DTool() {
             onChange={(v) => update("sparkleBevel", v)}
           />
           <ToggleField
-            label="Subtract (Carve)"
+            label="Sparkle Cutout"
             checked={settings.sparkleSubtract}
             onCheckedChange={(v) => update("sparkleSubtract", v)}
           />
+          {!settings.sparkleGlass && (
+            <>
           <SliderField
             label="Wave"
             value={settings.sparkleWave}
@@ -806,13 +871,8 @@ export function MeshStrata3DTool() {
             max={100}
             onChange={(v) => update("sparkleWaveSpeed", v)}
           />
-          <SliderField
-            label="Wave Height"
-            value={settings.sparkleWaveHeight}
-            min={0}
-            max={200}
-            onChange={(v) => update("sparkleWaveHeight", v)}
-          />
+            </>
+          )}
           <ToggleField
             label="Billboard (flat only)"
             checked={settings.sparkleBillboard}

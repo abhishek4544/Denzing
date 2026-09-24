@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
+import { LayerNameLabel } from "./layer-name-label";
 import { Environment, Lightformer, MeshTransmissionMaterial } from "@react-three/drei";
 import {
   Bloom,
@@ -1690,29 +1691,11 @@ function WireLayer({
   );
 }
 
-const cloudVertexShader = /* glsl */ `
-  uniform float uTime;
-  uniform float uSpeed;
-  uniform float uEscapeHeight;
-  uniform float uJitter;
-  uniform float uSize;
-  uniform float uSeed;
-
-  uniform vec3  uCursor;
-  uniform float uActive;
-  uniform float uRadius;
-  uniform float uVerticalReach;
-  uniform float uStrength;
-  uniform float uLayerY;
-
-  attribute float aRand;
-
-  varying float vDepth;
-  varying float vShade;
-  varying float vMix;
-
-  void main() {
-    vec3 p = position;
+// Shared by particles and wire anchors so their motion cannot drift apart.
+const cloudMotionShader = /* glsl */ `
+  vec3 cloudMotion(vec3 p, float aRand, float uTime, float uSpeed,
+    float uEscapeHeight, float uJitter, float uSeed, float uLayerY,
+    vec3 uCursor, float uActive, float uRadius, float uVerticalReach, float uStrength) {
     float t = uTime * uSpeed;
     float ph = aRand * 6.28318 + uSeed;
 
@@ -1769,6 +1752,37 @@ const cloudVertexShader = /* glsl */ `
     float bump = exp(-(dh * dh) / (sh * sh) - (dv * dv) / (sv * sv))
                * uStrength * uActive;
     finalPos.y += bump;
+
+    return finalPos;
+  }
+`;
+
+const cloudVertexShader = /* glsl */ `
+  uniform float uTime;
+  uniform float uSpeed;
+  uniform float uEscapeHeight;
+  uniform float uJitter;
+  uniform float uSize;
+  uniform float uSeed;
+
+  uniform vec3  uCursor;
+  uniform float uActive;
+  uniform float uRadius;
+  uniform float uVerticalReach;
+  uniform float uStrength;
+  uniform float uLayerY;
+
+  attribute float aRand;
+
+  varying float vDepth;
+  varying float vShade;
+  varying float vMix;
+  ${cloudMotionShader}
+
+  void main() {
+    vec3 p = position;
+    vec3 finalPos = cloudMotion(p, aRand, uTime, uSpeed, uEscapeHeight,
+      uJitter, uSeed, uLayerY, uCursor, uActive, uRadius, uVerticalReach, uStrength);
 
     vec4 mvPos = modelViewMatrix * vec4(finalPos, 1.0);
     gl_Position = projectionMatrix * mvPos;
@@ -2113,6 +2127,15 @@ function AgentLayer({
   junctionSplit,
   spawnRate,
   minAmplitude,
+  arcCount,
+  arcSpeed,
+  arcBallSpeed,
+  arcBallSize,
+  arcLift,
+  arcThickness,
+  arcDashLength,
+  arcGlow,
+  arcColor,
   phaseOffset,
   sharedUniforms,
 }: {
@@ -2137,6 +2160,15 @@ function AgentLayer({
   junctionSplit: boolean;
   spawnRate: number;
   minAmplitude: number;
+  arcCount: number;
+  arcSpeed: number;
+  arcBallSpeed: number;
+  arcBallSize: number;
+  arcLift: number;
+  arcThickness: number;
+  arcDashLength: number;
+  arcGlow: number;
+  arcColor: string;
   phaseOffset: number;
   sharedUniforms: LayerUniforms;
 }) {
@@ -2485,6 +2517,561 @@ function AgentLayer({
         ref={instancedRef}
         args={[capsuleGeom, signalMaterial, MAX_SIGNALS]}
       />
+      <AgentArcs
+        nodes={lattice.nodes}
+        size={size}
+        arcCount={arcCount}
+        arcSpeed={arcSpeed}
+        arcBallSpeed={arcBallSpeed}
+        arcBallSize={arcBallSize}
+        arcLift={arcLift}
+        arcThickness={arcThickness}
+        arcDashLength={arcDashLength}
+        arcGlow={arcGlow}
+        arcColor={arcColor}
+        seed={seed + phaseOffset * 0.71}
+      />
+    </group>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  AgentArcs — bezier signal arcs racing between lattice nodes.       *
+ *  Reuses the AgentLayer's node grid so arc endpoints land on nodes.  *
+ * ------------------------------------------------------------------ */
+
+type ArcEntry = {
+  a: THREE.Vector3;
+  b: THREE.Vector3;
+  ctrl: THREE.Vector3;
+  duration: number;
+  startAt: number;
+};
+
+function makeArcBetweenNodes(
+  nodes: Array<[number, number, number]>,
+  liftPct: number,
+  now: number,
+  rand: () => number,
+): ArcEntry {
+  const i = Math.floor(rand() * nodes.length);
+  let j = Math.floor(rand() * nodes.length);
+  if (j === i) j = (j + 1 + Math.floor(rand() * (nodes.length - 1))) % nodes.length;
+  const a = nodes[i];
+  const b = nodes[j];
+  const dist = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  const lift = dist * (0.08 + (liftPct / 100) * 0.8);
+  return {
+    a: new THREE.Vector3(a[0], a[1], a[2]),
+    b: new THREE.Vector3(b[0], b[1], b[2]),
+    ctrl: new THREE.Vector3(
+      (a[0] + b[0]) / 2,
+      Math.max(a[1], b[1]) + lift + 0.05,
+      (a[2] + b[2]) / 2,
+    ),
+    duration: 1.4 + rand() * 1.8,
+    startAt: now + rand() * 0.5,
+  };
+}
+
+function AgentArcs({
+  nodes,
+  size,
+  arcCount,
+  arcSpeed,
+  arcBallSpeed,
+  arcBallSize,
+  arcLift,
+  arcThickness,
+  arcDashLength,
+  arcGlow,
+  arcColor,
+  seed,
+}: {
+  nodes: Array<[number, number, number]>;
+  size: number;
+  arcCount: number;
+  arcSpeed: number;
+  arcBallSpeed: number;
+  arcBallSize: number;
+  arcLift: number;
+  arcThickness: number;
+  arcDashLength: number;
+  arcGlow: number;
+  arcColor: string;
+  seed: number;
+}) {
+  const travelClock = useRef(0);
+  const groupRef = useRef<THREE.Group>(null);
+  const arcsRef = useRef<ArcEntry[]>([]);
+  const meshesRef = useRef<
+    Array<{
+      line: THREE.Line;
+      mat: THREE.ShaderMaterial;
+      head: THREE.Mesh;
+      headMat: THREE.MeshBasicMaterial;
+      ringA: THREE.Mesh;
+      ringB: THREE.Mesh;
+      ringMatA: THREE.MeshBasicMaterial;
+      ringMatB: THREE.MeshBasicMaterial;
+    }>
+  >([]);
+  const randRef = useRef(seededPrng(Math.floor(seed * 1000) + 8117));
+
+  const SAMPLES = 96;
+  const clampedCount = Math.max(0, Math.min(120, Math.round(arcCount)));
+
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group || nodes.length < 2) return;
+    // Reset pool.
+    for (const m of meshesRef.current) {
+      m.line.geometry.dispose();
+      m.mat.dispose();
+      m.head.geometry.dispose();
+      m.headMat.dispose();
+      m.ringA.geometry.dispose();
+      m.ringB.geometry.dispose();
+      m.ringMatA.dispose();
+      m.ringMatB.dispose();
+      group.remove(m.line);
+      group.remove(m.head);
+      group.remove(m.ringA);
+      group.remove(m.ringB);
+    }
+    meshesRef.current = [];
+    arcsRef.current = [];
+    const rand = seededPrng(Math.floor(seed * 1000) + 8117);
+    randRef.current = rand;
+    const now = travelClock.current;
+
+    for (let i = 0; i < clampedCount; i += 1) {
+      const arc = makeArcBetweenNodes(nodes, arcLift, now - rand() * 2, rand);
+      arcsRef.current.push(arc);
+
+      const positions = new Float32Array(SAMPLES * 3);
+      const distances = new Float32Array(SAMPLES);
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      geom.setAttribute("aDist", new THREE.BufferAttribute(distances, 1));
+
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uProgress: { value: 0 },
+          uColor: { value: new THREE.Color(arcColor) },
+          uGlow: { value: arcGlow / 100 },
+          uDashLen: { value: arcDashLength / 100 },
+          uSpeed: { value: arcSpeed / 20 },
+        },
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexShader: /* glsl */ `
+          attribute float aDist;
+          varying float vD;
+          void main() {
+            vD = aDist;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          varying float vD;
+          uniform float uTime;
+          uniform float uProgress;
+          uniform vec3 uColor;
+          uniform float uGlow;
+          uniform float uDashLen;
+          uniform float uSpeed;
+          void main() {
+            if (vD > uProgress) discard;
+            float t = fract(vD * 6.0 - uTime * uSpeed);
+            float dash = smoothstep(0.5, 0.5 - uDashLen, abs(t - 0.5));
+            float tail = smoothstep(uProgress - 0.35, uProgress, vD);
+            float head = smoothstep(0.0, 0.06, uProgress - vD);
+            float base = 0.35 + 0.65 * dash;
+            float intensity = base * (0.55 + 0.45 * head) * (0.6 + 0.4 * tail);
+            vec3 col = uColor * (1.0 + uGlow * 1.5);
+            gl_FragColor = vec4(col, intensity);
+          }
+        `,
+      });
+
+      const line = new THREE.Line(geom, mat);
+      line.frustumCulled = false;
+      group.add(line);
+
+      const headGeom = new THREE.SphereGeometry(0.06, 10, 10);
+      const headMat = new THREE.MeshBasicMaterial({
+        color: arcColor,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const head = new THREE.Mesh(headGeom, headMat);
+      head.frustumCulled = false;
+      group.add(head);
+
+      const ringGeom = new THREE.RingGeometry(0.08, 0.11, 24);
+      const ringMatA = new THREE.MeshBasicMaterial({
+        color: arcColor,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const ringMatB = ringMatA.clone();
+      const ringA = new THREE.Mesh(ringGeom, ringMatA);
+      const ringB = new THREE.Mesh(ringGeom.clone(), ringMatB);
+      ringA.frustumCulled = false;
+      ringB.frustumCulled = false;
+      group.add(ringA);
+      group.add(ringB);
+
+      meshesRef.current.push({
+        line,
+        mat,
+        head,
+        headMat,
+        ringA,
+        ringB,
+        ringMatA,
+        ringMatB,
+      });
+    }
+  }, [clampedCount, seed, nodes, arcLift, arcColor, arcGlow, arcDashLength, arcSpeed]);
+
+  useFrame((state, delta) => {
+    // Integrate speed so changing it does not jump the ball along its arc.
+    travelClock.current += delta * Math.max(0, arcBallSpeed / 100);
+    const now = travelClock.current;
+    const scale = (0.6 + arcThickness / 100 * 1.2) * Math.max(0.01, arcBallSize / 100);
+    const meshes = meshesRef.current;
+    for (let i = 0; i < meshes.length; i += 1) {
+      const m = meshes[i];
+      // Live uniform sync so color/glow/dash/speed are hot-editable.
+      m.mat.uniforms.uColor.value.set(arcColor);
+      m.mat.uniforms.uGlow.value = arcGlow / 100;
+      m.mat.uniforms.uDashLen.value = arcDashLength / 100;
+      m.mat.uniforms.uSpeed.value = arcSpeed / 20;
+      m.mat.uniforms.uTime.value = state.clock.getElapsedTime();
+      m.headMat.color.set(arcColor);
+      m.ringMatA.color.set(arcColor);
+      m.ringMatB.color.set(arcColor);
+
+      let arc = arcsRef.current[i];
+      let prog = (now - arc.startAt) / arc.duration;
+      if (prog > 1.35) {
+        arcsRef.current[i] = makeArcBetweenNodes(
+          nodes,
+          arcLift,
+          now,
+          randRef.current,
+        );
+        arc = arcsRef.current[i];
+        prog = 0;
+      }
+
+      const drawProg = Math.min(1, Math.max(0, prog / 0.55));
+      m.mat.uniforms.uProgress.value = drawProg;
+
+      const posAttr = m.line.geometry.getAttribute(
+        "position",
+      ) as THREE.BufferAttribute;
+      const distAttr = m.line.geometry.getAttribute(
+        "aDist",
+      ) as THREE.BufferAttribute;
+      let lastX = 0;
+      let lastY = 0;
+      let lastZ = 0;
+      let total = 0;
+      for (let s = 0; s < SAMPLES; s += 1) {
+        const u = s / (SAMPLES - 1);
+        const omu = 1 - u;
+        const x = omu * omu * arc.a.x + 2 * omu * u * arc.ctrl.x + u * u * arc.b.x;
+        const y = omu * omu * arc.a.y + 2 * omu * u * arc.ctrl.y + u * u * arc.b.y;
+        const z = omu * omu * arc.a.z + 2 * omu * u * arc.ctrl.z + u * u * arc.b.z;
+        posAttr.setXYZ(s, x, y, z);
+        if (s === 0) {
+          distAttr.setX(s, 0);
+        } else {
+          total += Math.hypot(x - lastX, y - lastY, z - lastZ);
+          distAttr.setX(s, total);
+        }
+        lastX = x;
+        lastY = y;
+        lastZ = z;
+      }
+      if (total > 0) {
+        for (let s = 0; s < SAMPLES; s += 1) {
+          distAttr.setX(s, distAttr.getX(s) / total);
+        }
+      }
+      posAttr.needsUpdate = true;
+      distAttr.needsUpdate = true;
+
+      const uh = drawProg;
+      const omuh = 1 - uh;
+      const hx = omuh * omuh * arc.a.x + 2 * omuh * uh * arc.ctrl.x + uh * uh * arc.b.x;
+      const hy = omuh * omuh * arc.a.y + 2 * omuh * uh * arc.ctrl.y + uh * uh * arc.b.y;
+      const hz = omuh * omuh * arc.a.z + 2 * omuh * uh * arc.ctrl.z + uh * uh * arc.b.z;
+      m.head.position.set(hx, hy, hz);
+      m.headMat.opacity = drawProg < 1 ? 0.9 : Math.max(0, 0.4 * (1 - (prog - 0.55) / 0.35));
+      m.head.scale.setScalar(scale * (drawProg < 1 ? 1 : 0.4));
+
+      m.ringA.position.copy(arc.a);
+      m.ringB.position.copy(arc.b);
+      m.ringA.lookAt(state.camera.position);
+      m.ringB.lookAt(state.camera.position);
+
+      const aAge = prog;
+      m.ringMatA.opacity = Math.max(0, 0.9 - aAge * 2.4);
+      m.ringA.scale.setScalar(0.5 + aAge * 2.5);
+
+      const bAge = Math.max(0, prog - 0.55);
+      m.ringMatB.opacity = Math.max(0, 0.95 - bAge * 2.2);
+      m.ringB.scale.setScalar(0.5 + bAge * 3.2);
+    }
+    void size;
+  });
+
+  return <group ref={groupRef} />;
+}
+
+/* ------------------------------------------------------------------ *
+ *  TerrainLayer — dotted heightmap with elevation color ramp.        *
+ * ------------------------------------------------------------------ */
+
+function TerrainLayer({
+  layerY,
+  layerT,
+  size,
+  gridN,
+  dotSize,
+  opacity,
+  heightScale,
+  rampC0,
+  rampC1,
+  rampC2,
+  rampC3,
+  rampC4,
+  rampC5,
+  amplitude,
+  waveScale,
+  bottomBias,
+  seed,
+  arcCount,
+  arcSpeed,
+  arcBallSpeed,
+  arcBallSize,
+  arcLift,
+  arcThickness,
+  arcDashLength,
+  arcGlow,
+  arcColor,
+}: {
+  layerY: number;
+  layerT: number;
+  size: number;
+  gridN: number;
+  dotSize: number;
+  opacity: number;
+  heightScale: number;
+  rampC0: string;
+  rampC1: string;
+  rampC2: string;
+  rampC3: string;
+  rampC4: string;
+  rampC5: string;
+  amplitude: number;
+  waveScale: number;
+  bottomBias: number;
+  seed: number;
+  arcCount: number;
+  arcSpeed: number;
+  arcBallSpeed: number;
+  arcBallSize: number;
+  arcLift: number;
+  arcThickness: number;
+  arcDashLength: number;
+  arcGlow: number;
+  arcColor: string;
+}) {
+  const { geometry, uniforms } = useMemo(() => {
+    const N = Math.max(20, Math.floor(gridN));
+    const half = size / 2;
+    const step = size / (N - 1);
+    const positions = new Float32Array(N * N * 3);
+    const heights = new Float32Array(N * N);
+    let minH = Infinity;
+    let maxH = -Infinity;
+    for (let iz = 0; iz < N; iz += 1) {
+      for (let ix = 0; ix < N; ix += 1) {
+        const x = -half + ix * step;
+        const z = -half + iz * step;
+        const h = baseWaveHeightAt(
+          x,
+          z,
+          layerT,
+          amplitude,
+          waveScale,
+          bottomBias,
+          seed,
+        );
+        const idx = (iz * N + ix) * 3;
+        positions[idx + 0] = x;
+        positions[idx + 1] = h * (heightScale / 50);
+        positions[idx + 2] = z;
+        heights[iz * N + ix] = h;
+        if (h > maxH) maxH = h;
+        if (h < minH) minH = h;
+      }
+    }
+    const norm = new Float32Array(N * N);
+    const range = maxH - minH || 1;
+    for (let i = 0; i < heights.length; i += 1) {
+      norm[i] = (heights[i] - minH) / range;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    g.setAttribute("aHeight", new THREE.BufferAttribute(norm, 1));
+
+    const u = {
+      uSize: { value: dotSize * 0.001 * size },
+      uOpacity: { value: opacity / 100 },
+      uC0: { value: new THREE.Color(rampC0) },
+      uC1: { value: new THREE.Color(rampC1) },
+      uC2: { value: new THREE.Color(rampC2) },
+      uC3: { value: new THREE.Color(rampC3) },
+      uC4: { value: new THREE.Color(rampC4) },
+      uC5: { value: new THREE.Color(rampC5) },
+    } satisfies { [k: string]: THREE.IUniform };
+    return { geometry: g, uniforms: u };
+  }, [
+    gridN,
+    size,
+    dotSize,
+    opacity,
+    heightScale,
+    layerT,
+    amplitude,
+    waveScale,
+    bottomBias,
+    seed,
+    rampC0,
+    rampC1,
+    rampC2,
+    rampC3,
+    rampC4,
+    rampC5,
+  ]);
+
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  const { gl } = useThree();
+  const pixelRatio = Math.min(gl.getPixelRatio(), 2);
+
+  const material = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        vertexShader: /* glsl */ `
+          attribute float aHeight;
+          varying float vH;
+          uniform float uSize;
+          void main() {
+            vH = aHeight;
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            gl_Position = projectionMatrix * mv;
+            float depth = -mv.z;
+            gl_PointSize = uSize * (320.0 / depth) * ${pixelRatio.toFixed(2)};
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          varying float vH;
+          uniform float uOpacity;
+          uniform vec3 uC0;
+          uniform vec3 uC1;
+          uniform vec3 uC2;
+          uniform vec3 uC3;
+          uniform vec3 uC4;
+          uniform vec3 uC5;
+          vec3 ramp(float t) {
+            if (t < 0.2) return mix(uC0, uC1, t / 0.2);
+            if (t < 0.4) return mix(uC1, uC2, (t - 0.2) / 0.2);
+            if (t < 0.6) return mix(uC2, uC3, (t - 0.4) / 0.2);
+            if (t < 0.8) return mix(uC3, uC4, (t - 0.6) / 0.2);
+            return mix(uC4, uC5, (t - 0.8) / 0.2);
+          }
+          void main() {
+            vec2 uv = gl_PointCoord * 2.0 - 1.0;
+            float d = dot(uv, uv);
+            if (d > 1.0) discard;
+            float mask = smoothstep(1.0, 0.2, d);
+            vec3 col = ramp(clamp(vH, 0.0, 1.0));
+            gl_FragColor = vec4(col, mask * uOpacity);
+          }
+        `,
+      }),
+    [uniforms, pixelRatio],
+  );
+
+  useEffect(() => () => material.dispose(), [material]);
+
+  // Sample a small set of anchor nodes on the terrain surface for arc endpoints.
+  const arcNodes = useMemo(() => {
+    const K = Math.max(2, Math.min(64, Math.round(arcCount) + 4));
+    const rand = seededPrng(Math.floor(seed * 1000) + 4211);
+    const half = size / 2;
+    const out: Array<[number, number, number]> = [];
+    for (let i = 0; i < K; i += 1) {
+      const x = (rand() * 2 - 1) * half * 0.9;
+      const z = (rand() * 2 - 1) * half * 0.9;
+      const h = baseWaveHeightAt(
+        x,
+        z,
+        layerT,
+        amplitude,
+        waveScale,
+        bottomBias,
+        seed,
+      );
+      out.push([x, h * (heightScale / 50), z]);
+    }
+    return out;
+  }, [
+    arcCount,
+    seed,
+    size,
+    layerT,
+    amplitude,
+    waveScale,
+    bottomBias,
+    heightScale,
+  ]);
+
+  return (
+    <group position={[0, layerY, 0]}>
+      <points geometry={geometry} material={material} />
+      <AgentArcs
+        nodes={arcNodes}
+        size={size}
+        arcCount={arcCount}
+        arcSpeed={arcSpeed}
+        arcBallSpeed={arcBallSpeed}
+        arcBallSize={arcBallSize}
+        arcLift={arcLift}
+        arcThickness={arcThickness}
+        arcDashLength={arcDashLength}
+        arcGlow={arcGlow}
+        arcColor={arcColor}
+        seed={seed + 3.17}
+      />
     </group>
   );
 }
@@ -2552,6 +3139,977 @@ function buildSparkleGeometry(
   geom.translate(0, 0, -depth / 2);
   geom.computeVertexNormals();
   return geom;
+}
+
+/* ------------------------------------------------------------------ *
+ *  InterlayerConnectors — hyperrealistic hub-and-fan cabling between  *
+ *  every adjacent pair of layers. Data flows UPWARD (beads race from  *
+ *  the source at the bottom plate → up through the waist → up short   *
+ *  vertical stems to the terminal caps at the top plate).             *
+ * ------------------------------------------------------------------ */
+
+type InterlayerHub = {
+  waist: THREE.Vector3;
+  caps: Array<[number, number, number]>;
+  wires: Array<{ curve: THREE.CubicBezierCurve3 }>;
+  /** Top-plate vertical stem going into the waist for each cap. */
+  stems: Array<THREE.CubicBezierCurve3>;
+};
+
+function buildInterlayerHubs(
+  topY: number,
+  bottomY: number,
+  planeSize: number,
+  hubsPerSide: number,
+  wiresPerHub: number,
+  waistDepthPct: number,
+  fanRadiusPct: number,
+  clusterSize: number,
+  seed: number,
+  style: "strings" | "fan",
+): InterlayerHub[] {
+  const rand = seededPrng(Math.floor(seed * 1000) + 5501);
+  const half = planeSize * 0.42;
+  const N = Math.max(1, Math.round(hubsPerSide));
+  const step = (half * 2) / N;
+  const gap = topY - bottomY;
+  const waistY = topY - gap * (waistDepthPct / 100);
+  const fanR = planeSize * (fanRadiusPct / 100) * 0.5;
+  const clusterR = planeSize * 0.015 * Math.max(1, Math.min(12, clusterSize));
+
+  const hubs: InterlayerHub[] = [];
+  for (let gi = 0; gi < N; gi += 1) {
+    for (let gj = 0; gj < N; gj += 1) {
+      const hubX = -half + (gi + 0.5) * step;
+      const hubZ = -half + (gj + 0.5) * step;
+      const waist = new THREE.Vector3(hubX, waistY, hubZ);
+      const caps: Array<[number, number, number]> = [];
+      const stems: Array<THREE.CubicBezierCurve3> = [];
+      const wires: Array<{ curve: THREE.CubicBezierCurve3 }> = [];
+      const W = Math.max(0, Math.round(wiresPerHub));
+
+      if (style === "strings") {
+        // Straight-drop strings — each wire is a vertical bezier with all
+        // control points on (roughly) the same vertical line. Endpoints have
+        // a tiny XZ drift so the ends of the string cluster read as anchored
+        // rather than perfectly aligned; no hub bottleneck, no caps.
+        for (let w = 0; w < W; w += 1) {
+          const azimuth = rand() * Math.PI * 2;
+          const rTarget = fanR * Math.sqrt(rand());
+          const wireX = Math.max(-half, Math.min(half, hubX + Math.cos(azimuth) * rTarget));
+          const wireZ = Math.max(-half, Math.min(half, hubZ + Math.sin(azimuth) * rTarget));
+          const drift = fanR * 0.03;
+          const topX = wireX + (rand() - 0.5) * drift;
+          const topZ = wireZ + (rand() - 0.5) * drift;
+          const botX = wireX + (rand() - 0.5) * drift;
+          const botZ = wireZ + (rand() - 0.5) * drift;
+          const p0 = new THREE.Vector3(botX, bottomY, botZ);
+          const p1 = new THREE.Vector3(
+            botX + (topX - botX) * 0.33,
+            bottomY + gap * 0.33,
+            botZ + (topZ - botZ) * 0.33,
+          );
+          const p2 = new THREE.Vector3(
+            botX + (topX - botX) * 0.67,
+            bottomY + gap * 0.67,
+            botZ + (topZ - botZ) * 0.67,
+          );
+          const p3 = new THREE.Vector3(topX, topY, topZ);
+          wires.push({ curve: new THREE.CubicBezierCurve3(p0, p1, p2, p3) });
+        }
+        hubs.push({ waist, caps, wires, stems });
+        continue;
+      }
+
+      // ── "fan" style — hub with cap cluster, waist bottleneck, fanning wires.
+      const cs = Math.max(1, Math.round(clusterSize));
+      for (let k = 0; k < cs; k += 1) {
+        // Sunflower-like layout so the cluster reads dense but non-uniform.
+        const t = k / cs;
+        const angle = k * 2.399963229; // golden angle
+        const r = k === 0 ? 0 : clusterR * Math.sqrt(t);
+        const cx = hubX + Math.cos(angle) * r;
+        const cz = hubZ + Math.sin(angle) * r;
+        caps.push([cx, topY, cz]);
+        const stemDrop = Math.abs(gap) * 0.06;
+        const p0 = new THREE.Vector3(cx, topY, cz);
+        const p1 = new THREE.Vector3(cx, topY - stemDrop, cz);
+        const p2 = new THREE.Vector3(waist.x, waist.y + stemDrop * 0.6, waist.z);
+        const p3 = waist.clone();
+        stems.push(new THREE.CubicBezierCurve3(p0, p1, p2, p3));
+      }
+
+      for (let w = 0; w < W; w += 1) {
+        const azimuth = (w / Math.max(1, W)) * Math.PI * 2 + rand() * 0.35;
+        const rTarget = fanR * (0.4 + rand() * 0.7);
+        const cx = Math.max(-half, Math.min(half, hubX + Math.cos(azimuth) * rTarget));
+        const cz = Math.max(-half, Math.min(half, hubZ + Math.sin(azimuth) * rTarget));
+        const bottom = new THREE.Vector3(cx, bottomY, cz);
+        const dx = waist.x - cx;
+        const dz = waist.z - cz;
+        const horiz = Math.hypot(dx, dz);
+        const nx = horiz > 0 ? dx / horiz : 0;
+        const nz = horiz > 0 ? dz / horiz : 0;
+        const sag = Math.min(0.55, horiz * 0.09) * (0.9 + rand() * 0.25);
+        const horizonReach = horiz * (0.55 + rand() * 0.08);
+        const verticalDrop = Math.abs(gap) * 0.42;
+        const jitter = (rand() - 0.5) * horiz * 0.02;
+        const perpX = -nz;
+        const perpZ = nx;
+        const p1 = new THREE.Vector3(
+          bottom.x + nx * horizonReach + perpX * jitter,
+          bottomY - sag,
+          bottom.z + nz * horizonReach + perpZ * jitter,
+        );
+        const p2 = new THREE.Vector3(waist.x, waist.y - verticalDrop, waist.z);
+        wires.push({ curve: new THREE.CubicBezierCurve3(bottom, p1, p2, waist.clone()) });
+      }
+
+      hubs.push({ waist, caps, wires, stems });
+    }
+  }
+  return hubs;
+}
+
+/** Merge a list of TubeGeometry curves into one BufferGeometry, tagging
+ * each vertex with:
+ *   - an along-length parameter (0=start, 1=end)
+ *   - a per-curve random phase offset (so beads don't lock-step)
+ *   - a per-vertex color: 3-stop piecewise blend when midColors[c] is set
+ *     (mix(bottom→mid) for along∈[0,0.5], mix(mid→top) for along∈[0.5,1]),
+ *     otherwise a plain 2-stop blend mix(bottom, top, along).
+ * All color arrays (when provided) must be parallel to curves. */
+type MovingWireAnchor = {
+  kind: 1 | 2; // cloud particle or foundation box
+  faceOffset?: number;
+  point: THREE.Vector3;
+  random: number;
+  height: number;
+  phase: number;
+  layerY: number;
+};
+type WireAnchors = [MovingWireAnchor | null, MovingWireAnchor | null];
+
+function mergeCurvesToTube(
+  curves: THREE.Curve<THREE.Vector3>[],
+  bottomColors: THREE.Color[],
+  topColors: THREE.Color[],
+  midColors: THREE.Color[] | null,
+  radius: number,
+  radial: number,
+  tubular: number,
+  seed: number,
+  surfaceRanges: Array<[number, number]> = [],
+  anchors: WireAnchors[] = [],
+) {
+  const anchorAttributes = {
+    aCloudStart: [] as number[], aCloudEnd: [] as number[],
+    aCloudStartParams: [] as number[], aCloudEndParams: [] as number[],
+    aCloudStartOffset: [] as number[], aCloudEndOffset: [] as number[],
+  };
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  const aAlong: number[] = [];
+  const aSurfaceAlong: number[] = [];
+  const tangents: number[] = [];
+  const aPhase: number[] = [];
+  const colors: number[] = [];
+  const rand = seededPrng(Math.floor(seed * 1000) + 9013);
+  let baseVertex = 0;
+  const tmp = new THREE.Color();
+  const tmp2 = new THREE.Color();
+  for (let c = 0; c < curves.length; c += 1) {
+    const tube = new THREE.TubeGeometry(
+      curves[c],
+      tubular,
+      radius,
+      radial,
+      false,
+    );
+    const posArr = tube.attributes.position.array as ArrayLike<number>;
+    const normArr = tube.attributes.normal.array as ArrayLike<number>;
+    const uvArr = tube.attributes.uv.array as ArrayLike<number>;
+    const idxArr = tube.index!.array as ArrayLike<number>;
+    for (let i = 0; i < posArr.length; i += 1) positions.push(posArr[i]);
+    for (let i = 0; i < normArr.length; i += 1) normals.push(normArr[i]);
+    for (let i = 0; i < uvArr.length; i += 1) uvs.push(uvArr[i]);
+    for (let i = 0; i < idxArr.length; i += 1) indices.push(idxArr[i] + baseVertex);
+    const vCount = posArr.length / 3;
+    const curveLength = Math.max(0.001, curves[c].getLength());
+    const ringTangents = Array.from({ length: tubular + 1 }, (_, ring) => curves[c].getTangentAt(ring / tubular));
+    const phase = rand();
+    const endpoints = [curves[c].getPoint(0), curves[c].getPoint(1)];
+    const pair = anchors[c] ?? [null, null];
+    const anchorData = pair.map((anchor, end) => {
+      if (!anchor) return { point: [0, 0, 0, 0], params: [0, 0, 0, 0], offset: [0, 0, 0] };
+      return {
+        point: [...anchor.point.toArray(), anchor.random],
+        params: [anchor.height, anchor.phase, anchor.layerY, anchor.kind],
+        offset: [anchor.point.x - endpoints[end].x,
+          anchor.point.y + anchor.layerY + (anchor.faceOffset ?? 0) - endpoints[end].y,
+          anchor.point.z - endpoints[end].z],
+      };
+    });
+    const cB = bottomColors[c] ?? new THREE.Color("#ffffff");
+    const cT = topColors[c] ?? new THREE.Color("#ffffff");
+    const cM = midColors ? (midColors[c] ?? null) : null;
+    for (let i = 0; i < vCount; i += 1) {
+      const along = uvArr[i * 2];
+      anchorAttributes.aCloudStart.push(...anchorData[0].point);
+      anchorAttributes.aCloudEnd.push(...anchorData[1].point);
+      anchorAttributes.aCloudStartParams.push(...anchorData[0].params);
+      anchorAttributes.aCloudEndParams.push(...anchorData[1].params);
+      anchorAttributes.aCloudStartOffset.push(...anchorData[0].offset);
+      anchorAttributes.aCloudEndOffset.push(...anchorData[1].offset);
+      aAlong.push(along);
+      const tangent = ringTangents[Math.round(along * tubular)];
+      tangents.push(tangent.x, tangent.y, tangent.z, curveLength);
+      const range = surfaceRanges[c];
+      aSurfaceAlong.push(pair[0] || pair[1] ? along : range
+        ? (posArr[i * 3 + 1] - range[0]) / Math.max(0.05, range[1] - range[0])
+        : along);
+      aPhase.push(phase);
+      const blend = along * along * (3 - 2 * along);
+      if (cM) {
+        if (blend < 0.5) {
+          tmp.copy(cB).lerp(cM, blend * 2);
+        } else {
+          tmp2.copy(cM).lerp(cT, (blend - 0.5) * 2);
+          tmp.copy(tmp2);
+        }
+      } else {
+        tmp.copy(cB).lerp(cT, blend);
+      }
+      colors.push(tmp.r, tmp.g, tmp.b);
+    }
+    baseVertex += vCount;
+    tube.dispose();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  for (const [name, values] of Object.entries(anchorAttributes)) {
+    g.setAttribute(name, new THREE.Float32BufferAttribute(values, name.endsWith("Offset") ? 3 : 4));
+  }
+  g.setAttribute("aCurveTangent", new THREE.Float32BufferAttribute(tangents, 4));
+  g.setAttribute("aSurfaceAlong", new THREE.Float32BufferAttribute(aSurfaceAlong, 1));
+  g.setAttribute("aAlong", new THREE.Float32BufferAttribute(aAlong, 1));
+  g.setAttribute("aPhase", new THREE.Float32BufferAttribute(aPhase, 1));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  g.setIndex(indices);
+  return g;
+}
+
+// One instanced sphere per travelling bead. Curve samples stay on the GPU;
+// endpoint tracking is shared with the cable, so balls never lose their path.
+function buildExternalBeads(tubes: THREE.BufferGeometry, segments: number, radius: number, count: number, groups: { count: number; start: number; end: number }[], selectionSeed = 0) {
+  const rings = segments + 1;
+  const verticesPerCurve = rings * 9;
+  const curveCount = Math.floor((tubes.getAttribute("position")?.count ?? 0) / verticesPerCurve);
+  const rows = Math.max(1, curveCount * 3);
+  const data = new Float32Array(rings * rows * 4);
+  const sphere = new THREE.SphereGeometry(1, 16, 12);
+  const geometry = new THREE.InstancedBufferGeometry();
+  geometry.index = sphere.index!.clone();
+  for (const name of ["position", "normal", "uv"]) geometry.setAttribute(name, sphere.getAttribute(name).clone());
+  sphere.dispose();
+  const copies = Math.max(1, Math.round(count));
+  geometry.instanceCount = curveCount * copies;
+  const rowIds: number[] = [];
+  const offsets: number[] = [];
+  const travelRanges: number[] = [];
+  const anchorNames = ["aCloudStart", "aCloudEnd", "aCloudStartParams", "aCloudEndParams", "aCloudStartOffset", "aCloudEndOffset"];
+  const anchors = anchorNames.map(() => [] as number[]);
+  for (let c = 0; c < curveCount; c++) {
+    const first = c * verticesPerCurve;
+    for (let ring = 0; ring < rings; ring++) {
+      const vertex = first + ring * 9;
+      const center = new THREE.Vector3().fromBufferAttribute(tubes.getAttribute("position"), vertex)
+        .addScaledVector(new THREE.Vector3().fromBufferAttribute(tubes.getAttribute("normal"), vertex), -radius);
+      const tangent = tubes.getAttribute("aCurveTangent");
+      const color = tubes.getAttribute("color");
+      data.set([...center.toArray(), 1], ((c * 3) * rings + ring) * 4);
+      data.set([tangent.getX(vertex), tangent.getY(vertex), tangent.getZ(vertex), tangent.getW(vertex)], ((c * 3 + 1) * rings + ring) * 4);
+      data.set([color.getX(vertex), color.getY(vertex), color.getZ(vertex), 1], ((c * 3 + 2) * rings + ring) * 4);
+    }
+    let groupStart = 0;
+    const group = groups.find((entry) => {
+      if (c < groupStart + entry.count) return true;
+      groupStart += entry.count;
+      return false;
+    });
+    if (!group) continue;
+    const groupIndex = groups.indexOf(group);
+    for (let b = 0; b < copies; b++) {
+      const choose = seededPrng(Math.floor(selectionSeed * 1000) + groupIndex * 7919 + b * 104729 + 307);
+      const chosen = groupStart + Math.floor(choose() * group.count);
+      const phase = choose();
+      if (c !== chosen) continue;
+      rowIds.push(c * 3);
+      offsets.push((b + phase) / copies);
+      travelRanges.push(group.start, group.end);
+      anchorNames.forEach((name, index) => {
+        const attr = tubes.getAttribute(name);
+        for (let k = 0; k < attr.itemSize; k++) anchors[index].push(attr.array[first * attr.itemSize + k]);
+      });
+    }
+  }
+  geometry.instanceCount = rowIds.length;
+  const travel = rowIds.flatMap((row, i) => [row, offsets[i], travelRanges[i * 2], travelRanges[i * 2 + 1]]);
+  geometry.setAttribute("aBallTravel", new THREE.InstancedBufferAttribute(new Float32Array(travel), 4));
+  anchorNames.forEach((name, i) => geometry.setAttribute(name,
+    new THREE.InstancedBufferAttribute(new Float32Array(anchors[i]), name.endsWith("Offset") ? 3 : 4)));
+  const texture = new THREE.DataTexture(data, rings, rows, THREE.RGBAFormat, THREE.FloatType);
+  texture.needsUpdate = true;
+  return { geometry, texture, rings, rows, radius };
+}
+
+function InterlayerConnectors({
+  boxContents,
+  layerContents,
+  settings,
+  sharedUniforms,
+  layers,
+  layerConcept,
+  layerEscapeHeight,
+  cloudHeight,
+  planeSize,
+  wiresPerHub,
+  hubsPerSide,
+  waistDepth,
+  fanRadius,
+  tubeRadius,
+  opacity,
+  topBlend,
+  bottomBlend,
+  color,
+  glow,
+  flowSpeed,
+  beadCount,
+  beadWidth,
+  beadBrightness,
+  clusterSize,
+  capSize,
+  seed,
+  wiresPerHubByPair,
+  enabledByPair,
+  layerColors,
+  cascade,
+  usePalette,
+  paletteBottom,
+  paletteMid,
+  paletteTop,
+  style,
+}: {
+  boxContents: ContentPositions[];
+  layerContents: ContentPositions[];
+  settings: StrataSettings;
+  sharedUniforms: LayerUniforms;
+  layers: LayerGeom[];
+  layerConcept: LayerConcept[];
+  layerEscapeHeight: number[];
+  cloudHeight: number;
+  planeSize: number;
+  wiresPerHub: number;
+  hubsPerSide: number;
+  waistDepth: number;
+  fanRadius: number;
+  tubeRadius: number;
+  opacity: number;
+  topBlend: number;
+  bottomBlend: number;
+  color: string;
+  glow: number;
+  flowSpeed: number;
+  beadCount: number;
+  beadWidth: number;
+  beadBrightness: number;
+  clusterSize: number;
+  capSize: number;
+  seed: number;
+  wiresPerHubByPair: (number | null)[];
+  enabledByPair: (boolean | null)[];
+  layerColors: string[];
+  cascade: number;
+  usePalette: boolean;
+  paletteBottom: string;
+  paletteMid: string;
+  paletteTop: string;
+  style: "strings" | "fan";
+}) {
+  // Track pair index alongside hubs so we can assign per-pair colors later.
+  const hubsPerPair = useMemo(() => {
+    const out: Array<{ pairIdx: number; hubs: InterlayerHub[] }> = [];
+    const numPairs = Math.max(0, layers.length - 1);
+    for (let i = 0; i < numPairs; i += 1) {
+      // Per-pair enable check — a null entry means "inherit from global".
+      const enabled = enabledByPair[i];
+      if (enabled === false) {
+        out.push({ pairIdx: i, hubs: [] });
+        continue;
+      }
+      // Cascade multiplier: pair index 0 = top (fewer wires), numPairs-1 = bottom (full).
+      const towardBottom = numPairs > 1 ? i / (numPairs - 1) : 1;
+      const cascadeFrac = Math.max(0, Math.min(1, cascade / 100));
+      const cascadeMul = 1 - cascadeFrac + cascadeFrac * towardBottom;
+      // Per-pair override wins; otherwise apply cascade to the global base.
+      const perPairWires = wiresPerHubByPair[i];
+      const wireCount = perPairWires == null
+        ? Math.max(0, Math.round(wiresPerHub * cascadeMul))
+        : perPairWires;
+      out.push({
+        pairIdx: i,
+        hubs: buildInterlayerHubs(
+          layers[i].y,
+          layers[i + 1].y,
+          planeSize,
+          hubsPerSide,
+          wireCount,
+          waistDepth,
+          fanRadius,
+          clusterSize,
+          seed + i * 0.71,
+          style,
+        ),
+      });
+    }
+    return out;
+  }, [
+    layers,
+    planeSize,
+    hubsPerSide,
+    wiresPerHub,
+    waistDepth,
+    fanRadius,
+    clusterSize,
+    seed,
+    wiresPerHubByPair,
+    enabledByPair,
+    cascade,
+    style,
+  ]);
+
+  const flatHubs = useMemo(
+    () => hubsPerPair.flatMap((p) => p.hubs),
+    [hubsPerPair],
+  );
+
+  const { cloudDensity, amplitude, waveScale, bottomBias, seed: cloudSeed,
+    escapeSpeed, escapeJitter, contentSize, contentBob, foundationMaxHeight, layerContent } = settings;
+  const cloudPoints = useMemo(() => layers.map((_, index) =>
+    layerConcept[index] === "cloud" ? buildCloudGeometry(planeSize, cloudDensity,
+      layers.length === 1 ? 0 : index / (layers.length - 1),
+      amplitude, waveScale, bottomBias, cloudSeed * 0.1) : null),
+    [layers, layerConcept, planeSize, cloudDensity, amplitude, waveScale, bottomBias, cloudSeed]);
+  useEffect(() => () => cloudPoints.forEach((g) => g?.dispose()), [cloudPoints]);
+
+  // Keep a stable object identity for each endpoint throughout its motion.
+  const wireAnchors = useMemo(() => {
+    const anchorAt = (index: number, endpoint: THREE.Vector3, topFace: boolean): MovingWireAnchor | null => {
+      const concept = layerConcept[index] ?? "uniform";
+      const boxes = concept === "box" ? boxContents[index]
+        : concept === "uniform" && layerContent[index] === "data-foundation" ? layerContents[index] : null;
+      if (boxes?.positions.length) {
+        let nearest = 0;
+        let distance = Infinity;
+        boxes.positions.forEach(([x, , z], i) => {
+          const d = (x - endpoint.x) ** 2 + (z - endpoint.z) ** 2;
+          if (d < distance) { nearest = i; distance = d; }
+        });
+        const height = Math.max(0.02, foundationMaxHeight / 100 * contentSize * 0.008 * 4
+          * (boxes.heightFactors?.[nearest] ?? 0.5));
+        return {
+          kind: 2,
+          point: new THREE.Vector3(...boxes.positions[nearest]),
+          random: 0, height: 0, phase: nearest * 0.73 + index * 1.31,
+          layerY: layers[index].y, faceOffset: topFace ? height : 0,
+        };
+      }
+      const geometry = cloudPoints[index];
+      if (!geometry) return null;
+      const n = Math.max(2, Math.round(cloudDensity));
+      const col = THREE.MathUtils.clamp(Math.round((endpoint.x / planeSize + 0.5) * n), 0, n);
+      const row = THREE.MathUtils.clamp(Math.round((endpoint.z / planeSize + 0.5) * n), 0, n);
+      const particle = row * (n + 1) + col;
+      return {
+        kind: 1,
+        point: new THREE.Vector3().fromBufferAttribute(geometry.attributes.position, particle),
+        random: geometry.attributes.aRand.getX(particle),
+        height: (layerEscapeHeight[index] ?? 35) * cloudHeight / 100,
+        phase: index * 0.37 + cloudSeed * 0.02,
+        layerY: layers[index].y,
+      };
+    };
+    const fans: WireAnchors[] = [];
+    const stems: WireAnchors[] = [];
+    for (const { pairIdx, hubs } of hubsPerPair) {
+      for (const hub of hubs) {
+        for (const { curve } of hub.wires) fans.push([
+          anchorAt(pairIdx + 1, curve.v0, true), style === "strings" ? anchorAt(pairIdx, curve.v3, false) : null,
+        ]);
+        for (const curve of hub.stems) stems.push([null, anchorAt(pairIdx, curve.v0, false)]);
+      }
+    }
+    return { fans, stems };
+  }, [cloudPoints, cloudDensity, planeSize, layerEscapeHeight, cloudHeight, cloudSeed, layers, hubsPerPair, style,
+    layerConcept, layerContent, boxContents, layerContents, foundationMaxHeight, contentSize]);
+
+  // Sample one continuous color field through the stack. Fan and stem
+  // endpoints share the same waist color, eliminating a seam at each hub.
+  const connectorColors = useMemo(() => {
+    const palette = [paletteBottom, paletteMid, paletteTop].map((c) => new THREE.Color(c));
+    const bottomY = layers[layers.length - 1]?.y ?? 0;
+    const topY = layers[0]?.y ?? 1;
+    const paletteAt = (y: number) => {
+      const t = THREE.MathUtils.clamp((y - bottomY) / Math.max(0.001, topY - bottomY), 0, 1);
+      const segment = t < 0.5 ? 0 : 1;
+      const f = t < 0.5 ? t * 2 : (t - 0.5) * 2;
+      return palette[segment].clone().lerp(palette[segment + 1], f * f * (3 - 2 * f));
+    };
+    const fanBottoms: THREE.Color[] = [];
+    const fanTops: THREE.Color[] = [];
+    const stemBottoms: THREE.Color[] = [];
+    const stemTops: THREE.Color[] = [];
+    const capColors: THREE.Color[] = [];
+    const waistColors: THREE.Color[] = [];
+    for (const { pairIdx, hubs } of hubsPerPair) {
+      const low = layers[pairIdx + 1].y;
+      const high = layers[pairIdx].y;
+      const lowColor = new THREE.Color(layerColors[pairIdx + 1] ?? color);
+      const highColor = new THREE.Color(layerColors[pairIdx] ?? color);
+      const at = (y: number) => usePalette ? paletteAt(y) : lowColor.clone().lerp(
+        highColor, THREE.MathUtils.clamp((y - low) / Math.max(0.001, high - low), 0, 1),
+      );
+      for (const h of hubs) {
+        for (const { curve } of h.wires) {
+          fanBottoms.push(at(curve.v0.y));
+          fanTops.push(at(curve.v3.y));
+        }
+        for (const curve of h.stems) {
+          stemBottoms.push(at(curve.v3.y));
+          stemTops.push(at(curve.v0.y));
+        }
+        for (const cap of h.caps) capColors.push(at(cap[1]));
+        waistColors.push(at(h.waist.y));
+      }
+    }
+    return { fanBottoms, fanTops, stemBottoms, stemTops, capColors, waistColors };
+  }, [layers, hubsPerPair, layerColors, color, usePalette, paletteBottom, paletteMid, paletteTop]);
+
+  // Blend against the visible layer envelope rather than its nominal Y plane.
+  // Particle layers occupy a volume above the wave and must hide connections
+  // at both their underside and their ceiling.
+  const surfaceRanges = useMemo(() => {
+    const bounds = layers.map((layer, index) => {
+      let low = 0;
+      let high = 0;
+      for (let j = 1; j < layer.positions.length; j += 3) {
+        low = Math.min(low, layer.positions[j]);
+        high = Math.max(high, layer.positions[j]);
+      }
+      const cloud = layerConcept[index] === "cloud";
+      const cloudDepth = cloud ? (layerEscapeHeight[index] ?? 35) * cloudHeight / 100 * 0.02 : 0;
+      const softMargin = planeSize * (cloud ? 0.025 : 0.008);
+      return [layer.y + low - softMargin, layer.y + high + cloudDepth + softMargin];
+    });
+    const fans: Array<[number, number]> = [];
+    const stems: Array<[number, number]> = [];
+    for (const { pairIdx, hubs } of hubsPerPair) {
+      const range: [number, number] = [bounds[pairIdx + 1][1], bounds[pairIdx][0]];
+      for (const hub of hubs) {
+        for (const wire of hub.wires) { void wire; fans.push(range); }
+        for (const stem of hub.stems) { void stem; stems.push(range); }
+      }
+    }
+    return { fans, stems };
+  }, [layers, layerConcept, layerEscapeHeight, cloudHeight, planeSize, hubsPerPair]);
+
+  // ─── Fan-wire tube geometry (radial fibers below waist) ────────────
+  const fanGeom = useMemo(() => {
+    const curves = flatHubs.flatMap((h) => h.wires.map((w) => w.curve));
+    if (curves.length === 0) return new THREE.BufferGeometry();
+    return mergeCurvesToTube(
+      curves,
+      connectorColors.fanBottoms,
+      connectorColors.fanTops,
+      null,
+      tubeRadius * 0.00045 * planeSize,
+      8,
+      44,
+      seed + 1.3,
+      surfaceRanges.fans,
+      wireAnchors.fans,
+    );
+  }, [flatHubs, connectorColors, tubeRadius, planeSize, seed, surfaceRanges, wireAnchors]);
+  useEffect(() => () => fanGeom.dispose(), [fanGeom]);
+
+  // ─── Stem tube geometry (vertical bundle from caps to waist) ──────
+  const stemGeom = useMemo(() => {
+    const curves = flatHubs.flatMap((h) => h.stems.map((c) =>
+      new THREE.CubicBezierCurve3(c.v3, c.v2, c.v1, c.v0),
+    ));
+    if (curves.length === 0) return new THREE.BufferGeometry();
+    return mergeCurvesToTube(
+      curves,
+      connectorColors.stemBottoms,
+      connectorColors.stemTops,
+      null,
+      tubeRadius * 0.00055 * planeSize,
+      8,
+      18,
+      seed + 5.7,
+      surfaceRanges.stems,
+      wireAnchors.stems,
+    );
+  }, [flatHubs, connectorColors, tubeRadius, planeSize, seed, surfaceRanges, wireAnchors]);
+  useEffect(() => () => stemGeom.dispose(), [stemGeom]);
+
+  // ─── Physical tube material — self-contained ShaderMaterial ────────
+  const tubeMaterial = useMemo(() => {
+    // Pure ShaderMaterial we own end-to-end. Draws physical-feeling PBR-ish
+    // cable body with rim + Lambert wrap + traveling bead, using the merged
+    // geometry's per-vertex color for both diffuse tint and bead hue.
+    const mat = new THREE.ShaderMaterial({
+      uniforms: {
+        uBoxBobAmplitude: { value: 0 },
+        uCloudSpeed: { value: 0 },
+        uCloudJitter: { value: 0 },
+        uCursor: sharedUniforms.uCursor,
+        uActive: sharedUniforms.uActive,
+        uRadius: sharedUniforms.uRadius,
+        uVerticalReach: sharedUniforms.uVerticalReach,
+        uStrength: sharedUniforms.uStrength,
+        uTime: { value: 0 },
+        uSpeed: { value: 0 },
+        uBeadCount: { value: 1 },
+        uBeadWidth: { value: 0.2 },
+        uBeadBrightness: { value: 1 },
+        uBaseIntensity: { value: 0.2 },
+        uOpacity: { value: 0.35 },
+        uTopBlend: { value: 0.4 },
+        uBottomBlend: { value: 0.4 },
+      },
+      // vertexColors is intentionally omitted — three.js would auto-inject
+      // `attribute vec3 color;` and collide with our explicit declaration
+      // below, killing the shader compile.
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.NormalBlending,
+      toneMapped: true,
+      vertexShader: /* glsl */ `
+        uniform float uTime, uCloudSpeed, uCloudJitter, uBoxBobAmplitude;
+        uniform vec3 uCursor;
+        uniform float uActive, uRadius, uVerticalReach, uStrength;
+        attribute vec4 aCloudStart, aCloudEnd;
+        attribute vec4 aCloudStartParams, aCloudEndParams;
+        attribute vec3 aCloudStartOffset, aCloudEndOffset;
+        attribute vec4 aCurveTangent;
+        ${cloudMotionShader}
+        vec3 anchorDelta(vec4 point, vec4 params, vec3 offset) {
+          if (params.w < 0.5) return vec3(0.0);
+          if (params.w > 1.5) {
+            // Exactly the translation applied by LayerContent to this box.
+            vec2 d = point.xz - uCursor.xz;
+            float dy = point.y + params.z - uCursor.y;
+            float bump = exp(-dot(d, d) / (uRadius * uRadius)
+              - dy * dy / (uVerticalReach * uVerticalReach)) * uStrength * uActive;
+            float bob = sin(uTime * 0.9 + params.y) * uBoxBobAmplitude;
+            return offset + vec3(0.0, bump + bob, 0.0);
+          }
+          return cloudMotion(point.xyz, point.w, uTime, uCloudSpeed, params.x,
+            uCloudJitter, params.y, params.z, uCursor, uActive, uRadius,
+            uVerticalReach, uStrength) - point.xyz + offset;
+        }
+        attribute vec3 color;
+        attribute float aAlong;
+        attribute float aSurfaceAlong;
+        attribute float aPhase;
+        varying float vAlong;
+        varying float vSurfaceAlong;
+        varying float vPhase;
+        varying vec3 vNormalV;
+        varying vec3 vViewDirV;
+        varying vec3 vColor;
+        void main() {
+          vAlong = aAlong;
+          vSurfaceAlong = aSurfaceAlong;
+          vPhase = aPhase;
+          vColor = color;
+          float blend = smoothstep(0.0, 1.0, aAlong);
+          vec3 startDelta = anchorDelta(aCloudStart, aCloudStartParams, aCloudStartOffset);
+          vec3 endDelta = anchorDelta(aCloudEnd, aCloudEndParams, aCloudEndOffset);
+          vec3 tracked = position + mix(startDelta, endDelta, blend);
+          // Inverse-transpose of the endpoint deformation: highlights follow
+          // the bent cable instead of staying aligned with its original tube.
+          vec3 slope = (endDelta - startDelta) * (6.0 * aAlong * (1.0 - aAlong) / aCurveTangent.w);
+          vec3 bentNormal = normal - aCurveTangent.xyz * dot(slope, normal)
+            / max(0.1, 1.0 + dot(slope, aCurveTangent.xyz));
+          vec4 mv = modelViewMatrix * vec4(tracked, 1.0);
+          vNormalV = normalize(normalMatrix * bentNormal);
+          vViewDirV = normalize(-mv.xyz);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        varying float vAlong;
+        varying float vSurfaceAlong;
+        varying float vPhase;
+        varying vec3 vNormalV;
+        varying vec3 vViewDirV;
+        varying vec3 vColor;
+        uniform float uTime;
+        uniform float uSpeed;
+        uniform float uBeadCount;
+        uniform float uBeadWidth;
+        uniform float uBeadBrightness;
+        uniform float uBaseIntensity;
+        uniform float uOpacity;
+        uniform float uTopBlend;
+        uniform float uBottomBlend;
+        float opacityFade(float distanceToContact, float width) {
+          if (width <= 0.0) return 1.0;
+          float t = clamp(distanceToContact / width, 0.0, 1.0);
+          // Quintic easing has zero slope and curvature at both ends.
+          return t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+        }
+        void main() {
+          vec3 n = normalize(vNormalV);
+          vec3 viewDir = normalize(vViewDirV);
+          vec3 lightDir = normalize(vec3(-0.4, 0.8, 0.6));
+          float diffuse = 0.25 + 0.55 * max(dot(n, lightDir), 0.0);
+          float specular = pow(max(dot(n, normalize(lightDir + viewDir)), 0.0), 64.0);
+          vec3 base = vColor * (diffuse + uBaseIntensity) + vec3(specular * 0.22);
+          // Fade coverage only: the material and highlights retain their hue.
+          float contact = opacityFade(vSurfaceAlong, uBottomBlend)
+            * opacityFade(1.0 - vSurfaceAlong, uTopBlend);
+
+          // Let multisample coverage define a crisp silhouette. Opacity
+          // fades only along the cable at contacts, not across its width.
+          float alpha = uOpacity * contact;
+          gl_FragColor = vec4(base, alpha);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }
+      `,
+    });
+    return mat;
+  }, [sharedUniforms]);
+  useEffect(() => () => tubeMaterial.dispose(), [tubeMaterial]);
+
+  const externalBeads = useMemo(() => {
+    // Every layer gap owns its count. Fan and stem share one trip through
+    // that gap so a hub does not double the number of visible balls.
+    const fanGroups = hubsPerPair.map(({ hubs }) => ({
+      count: hubs.reduce((n, h) => n + h.wires.length, 0), start: 0,
+      end: style === "strings" ? 1 : 1 - waistDepth / 100,
+    }));
+    const stemGroups = hubsPerPair.map(({ hubs }, index) => ({
+      count: hubs.reduce((n, h) => n + h.stems.length, 0),
+      start: fanGroups[index].end, end: 1,
+    }));
+    const pools = [
+      buildExternalBeads(fanGeom, 44, tubeRadius * 0.00045 * planeSize, beadCount, fanGroups, seed),
+      buildExternalBeads(stemGeom, 18, tubeRadius * 0.00055 * planeSize, beadCount, stemGroups, seed),
+    ];
+    return pools.map((pool) => {
+      const material = tubeMaterial.clone();
+      // Share live controls and time with the strings.
+      material.uniforms = { ...tubeMaterial.uniforms,
+        // Ball appearance is independent of the wire opacity and gradient.
+        uOpacity: { value: 0.85 },
+        uBallColor: { value: new THREE.Color("#ffffff") },
+        uCurveData: { value: pool.texture },
+        uCurveDimensions: { value: new THREE.Vector2(pool.rings, pool.rows) },
+        uTubeRadius: { value: pool.radius },
+        uBallRadius: { value: pool.radius + planeSize * 0.00008 * Math.max(1, beadWidth) },
+      };
+      const preamble = tubeMaterial.vertexShader.slice(0, tubeMaterial.vertexShader.indexOf("void main()"))
+        // These tube-only inputs are not used by the sphere shader. Leaving
+        // them declared can exhaust WebGL's vertex attribute slots.
+        .replace(/attribute (?:vec3 color|float aAlong|float aSurfaceAlong|float aPhase|vec4 aCurveTangent);/g, "");
+      material.vertexShader = preamble + /* glsl */ `
+        uniform vec3 uBallColor;
+        uniform sampler2D uCurveData;
+        uniform vec2 uCurveDimensions;
+        uniform float uTubeRadius, uBallRadius, uSpeed, uBeadCount;
+        attribute vec4 aBallTravel;
+        vec4 curveSample(float along, float row) {
+          float x = along * (uCurveDimensions.x - 1.0);
+          vec2 a = vec2((floor(x) + 0.5) / uCurveDimensions.x, (row + 0.5) / uCurveDimensions.y);
+          vec2 b = vec2((min(floor(x) + 1.0, uCurveDimensions.x - 1.0) + 0.5) / uCurveDimensions.x, a.y);
+          return mix(texture2D(uCurveData, a), texture2D(uCurveData, b), fract(x));
+        }
+        void main() {
+          float progress = fract(uTime * uSpeed * 0.08 + aBallTravel.y);
+          if (progress < aBallTravel.z || progress >= aBallTravel.w) {
+            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+            return;
+          }
+          float along = (progress - aBallTravel.z) / max(0.0001, aBallTravel.w - aBallTravel.z);
+          vec3 startDelta = anchorDelta(aCloudStart, aCloudStartParams, aCloudStartOffset);
+          vec3 endDelta = anchorDelta(aCloudEnd, aCloudEndParams, aCloudEndOffset);
+          vec3 center = curveSample(along, aBallTravel.x).xyz
+            + mix(startDelta, endDelta, smoothstep(0.0, 1.0, along));
+          // Center the sphere on the exact tracked wire path.
+          vec4 mv = modelViewMatrix * vec4(center + position * uBallRadius, 1.0);
+          vAlong = along;
+          vSurfaceAlong = along;
+          vPhase = 0.0;
+          vColor = uBallColor;
+          vNormalV = normalize(normalMatrix * normal);
+          vViewDirV = normalize(-mv.xyz);
+          gl_Position = projectionMatrix * mv;
+        }
+      `;
+      material.fragmentShader = tubeMaterial.fragmentShader
+        // Wire contact fades must not hide independently controlled balls.
+        .replace("float alpha = uOpacity * contact;", "float alpha = uOpacity;")
+        .replace("vec4(base, alpha)", "vec4(base + vColor * uBeadBrightness * 0.06, alpha)");
+      return { ...pool, material };
+    });
+  }, [fanGeom, stemGeom, tubeRadius, planeSize, beadCount, beadWidth, tubeMaterial, hubsPerPair, style, waistDepth, seed]);
+  useEffect(() => () => externalBeads.forEach(({ geometry, texture, material }) => {
+    geometry.dispose(); texture.dispose(); material.dispose();
+  }), [externalBeads]);
+
+  // ─── Cap + waist instanced meshes ─────────────────────────────────
+  // In "strings" mode we suppress the waist orbs and the cluster caps —
+  // strings connect the two plates directly with no visible hub fitting.
+  const capCount = flatHubs.reduce((s, h) => s + h.caps.length, 0);
+  const waistCount = style === "strings" ? 0 : flatHubs.length;
+
+  const capGeom = useMemo(() => {
+    const r = (capSize / 100) * 0.05 * planeSize;
+    const g = new THREE.CylinderGeometry(r * 0.5, r * 0.7, r * 1.2, 12);
+    return g;
+  }, [capSize, planeSize]);
+  useEffect(() => () => capGeom.dispose(), [capGeom]);
+
+  const capMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color("#ffffff"),
+        emissive: new THREE.Color(color),
+        emissiveIntensity: glow / 500,
+        roughness: 0.28,
+        metalness: 0.55,
+        toneMapped: true,
+      }),
+    [color, glow],
+  );
+  useEffect(() => () => capMat.dispose(), [capMat]);
+
+  const waistGeom = useMemo(() => {
+    const r = (capSize / 100) * 0.04 * planeSize;
+    return new THREE.SphereGeometry(Math.max(0.008, r), 20, 14);
+  }, [capSize, planeSize]);
+  useEffect(() => () => waistGeom.dispose(), [waistGeom]);
+
+  const waistMat = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color("#ffffff"),
+        emissive: new THREE.Color(color),
+        emissiveIntensity: glow / 600,
+        roughness: 0.35,
+        metalness: 0.2,
+        toneMapped: true,
+      }),
+    [color, glow],
+  );
+  useEffect(() => () => waistMat.dispose(), [waistMat]);
+
+  const capsMeshRef = useRef<THREE.InstancedMesh | null>(null);
+  const waistMeshRef = useRef<THREE.InstancedMesh | null>(null);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+
+  useEffect(() => {
+    const caps = capsMeshRef.current;
+    const waists = waistMeshRef.current;
+    if (caps) {
+      let i = 0;
+      for (const h of flatHubs) {
+        for (const c of h.caps) {
+          dummy.position.set(c[0], c[1] - (capGeom.parameters.height * 0.5), c[2]);
+          dummy.rotation.set(0, 0, 0);
+          dummy.scale.setScalar(1);
+          dummy.updateMatrix();
+          caps.setMatrixAt(i, dummy.matrix);
+          caps.setColorAt(i, connectorColors.capColors[i]);
+          i += 1;
+        }
+      }
+      caps.count = capCount;
+      caps.instanceMatrix.needsUpdate = true;
+      if (caps.instanceColor) caps.instanceColor.needsUpdate = true;
+    }
+    if (waists) {
+      let i = 0;
+      for (const h of flatHubs) {
+        dummy.position.copy(h.waist);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.setScalar(1.15);
+        dummy.updateMatrix();
+        waists.setMatrixAt(i, dummy.matrix);
+        waists.setColorAt(i, connectorColors.waistColors[i]);
+        i += 1;
+      }
+      waists.count = waistCount;
+      waists.instanceMatrix.needsUpdate = true;
+      if (waists.instanceColor) waists.instanceColor.needsUpdate = true;
+    }
+  }, [flatHubs, capCount, waistCount, capGeom, dummy, connectorColors]);
+
+  // ─── Live uniform sync + animation ────────────────────────────────
+  useFrame((state) => {
+    const now = state.clock.getElapsedTime();
+    const u = tubeMaterial.uniforms;
+    u.uTime.value = now;
+    u.uBoxBobAmplitude.value = Math.max(0, contentBob) / 100 * contentSize * 0.008 * 0.6;
+    u.uCloudSpeed.value = Math.max(0.01, escapeSpeed / 100);
+    u.uCloudJitter.value = escapeJitter / 100;
+    u.uOpacity.value = THREE.MathUtils.clamp(opacity / 100, 0, 1);
+    u.uTopBlend.value = THREE.MathUtils.clamp(topBlend / 100, 0, 0.5);
+    u.uBottomBlend.value = THREE.MathUtils.clamp(bottomBlend / 100, 0, 0.5);
+    u.uSpeed.value = flowSpeed / 40;
+    u.uBeadCount.value = Math.max(1, Math.round(beadCount));
+    u.uBeadWidth.value = (beadWidth / 100) * 0.5;
+    u.uBeadBrightness.value = beadBrightness / 100;
+    u.uBaseIntensity.value = 0.08 + glow / 250;
+    for (const { material } of externalBeads) {
+      material.uniforms.uOpacity.value = THREE.MathUtils.clamp(settings.interlayerBallOpacity / 100, 0, 1);
+      material.uniforms.uBallColor.value.set(settings.interlayerBallColor);
+    }
+  });
+
+  if (flatHubs.length === 0) return null;
+
+  return (
+    <group>
+      <mesh geometry={fanGeom} material={tubeMaterial} frustumCulled={false} />
+      <mesh geometry={stemGeom} material={tubeMaterial} frustumCulled={false} />
+      {externalBeads.map((pool, index) => (
+        <mesh key={index} geometry={pool.geometry} material={pool.material} frustumCulled={false} />
+      ))}
+      {capCount > 0 && (
+        <instancedMesh
+          ref={capsMeshRef}
+          args={[capGeom, capMat, Math.max(1, capCount)]}
+          frustumCulled={false}
+        />
+      )}
+      {waistCount > 0 && (
+        <instancedMesh
+          ref={waistMeshRef}
+          args={[waistGeom, waistMat, Math.max(1, waistCount)]}
+          frustumCulled={false}
+        />
+      )}
+    </group>
+  );
 }
 
 function SparkleLayer({
@@ -3169,6 +4727,51 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
     agentJunctionSplit,
     agentSpawnRate,
     agentMinAmplitude,
+    agentArcCount,
+    agentArcSpeed,
+    agentArcBallSpeed,
+    agentArcBallSize,
+    agentArcLift,
+    agentArcThickness,
+    agentArcDashLength,
+    agentArcGlow,
+    agentArcColor,
+    terrainGridN,
+    terrainDotSize,
+    terrainHeightScale,
+    terrainOpacity,
+    terrainRampC0,
+    terrainRampC1,
+    terrainRampC2,
+    terrainRampC3,
+    terrainRampC4,
+    terrainRampC5,
+    interlayerEnabled,
+    interlayerWiresPerHub,
+    interlayerHubsPerSide,
+    interlayerWaistDepth,
+    interlayerFanRadius,
+    interlayerTubeRadius,
+    interlayerColor,
+    interlayerGlow,
+    interlayerFlowSpeed,
+    interlayerBeadCount,
+    interlayerBeadWidth,
+    interlayerBeadBrightness,
+    interlayerClusterSize,
+    interlayerCapSize,
+    interlayerSeed,
+    interlayerWiresPerHubByPair,
+    interlayerEnabledByPair,
+    interlayerCascade,
+    interlayerUsePalette,
+    interlayerPaletteBottom,
+    interlayerPaletteMid,
+    interlayerPaletteTop,
+    interlayerStyle,
+    interlayerOpacity,
+    interlayerTopBlend,
+    interlayerBottomBlend,
     sparkleSize,
     sparklePinch,
     sparkleColor,
@@ -3536,6 +5139,31 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
     activeTarget.current = 0;
   };
 
+  // Connect to the rendered material, not a base swatch that a concept may
+  // ignore (the cloud, for example, uses its own two-color palette).
+  const connectorLayerColors = useMemo(() => {
+    const midpoint = (a: string, b: string) =>
+      `#${new THREE.Color(a).lerp(new THREE.Color(b), 0.5).getHexString()}`;
+    return Array.from({ length: layerCount }, (_, index) => {
+      const base = layerColors[index] || meshColor;
+      switch (layerConcept[index] ?? "uniform") {
+        case "cloud": return midpoint(cloudColorB, cloudColorC);
+        case "sparkle": return sparkleGlass ? sparkleGlassTint : sparkleColor;
+        case "agent": return midpoint(agentNodeColor, agentSignalColor);
+        case "terrain": return midpoint(terrainRampC2, terrainRampC3);
+        case "box": return foundationColor || base;
+        case "uniform":
+          if (layerContent[index] === "data-foundation") return foundationColor || base;
+          if (layerContent[index] === "platforms") return platformColor || base;
+          return base;
+        default: return base;
+      }
+    });
+  }, [layerCount, layerColors, meshColor, layerConcept, layerContent,
+    cloudColorB, cloudColorC, sparkleGlass, sparkleGlassTint, sparkleColor,
+    agentNodeColor, agentSignalColor, terrainRampC2, terrainRampC3,
+    foundationColor, platformColor]);
+
   // Camera-facing invisible plane covering the stack visually.
   const pointerPlaneSize = Math.max(planeSize, frameSize) * 3;
 
@@ -3549,12 +5177,14 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
           const isCloud = concept === "cloud";
           const isAgent = concept === "agent";
           const isSparkle = concept === "sparkle";
+          const isTerrain = concept === "terrain";
           const isConceptMesh =
             concept !== "uniform" &&
             concept !== "box" &&
             concept !== "cloud" &&
             concept !== "agent" &&
-            concept !== "sparkle";
+            concept !== "sparkle" &&
+            concept !== "terrain";
           const contentColor = layerColors[idx] || meshColor;
           const rawContentType = (layerContent[idx] ?? "none") as ContentType;
           const effectiveContentType: ContentType = isBox
@@ -3573,6 +5203,12 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
             : undefined;
           return (
             <group key={idx}>
+              <LayerNameLabel
+                fontSize={settings.layerLabelFontSize}
+                name={settings.layerNames[idx]?.trim() || `Layer ${idx + 1}`}
+                layerY={layer.y}
+                planeSize={planeSize}
+              />
               {showBaseMesh && (
                 <WireLayer
                   layer={layer}
@@ -3632,8 +5268,47 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
                   junctionSplit={agentJunctionSplit}
                   spawnRate={agentSpawnRate}
                   minAmplitude={agentMinAmplitude}
+                  arcCount={agentArcCount}
+                  arcSpeed={agentArcSpeed}
+                  arcBallSpeed={agentArcBallSpeed}
+                  arcBallSize={agentArcBallSize}
+                  arcLift={agentArcLift}
+                  arcThickness={agentArcThickness}
+                  arcDashLength={agentArcDashLength}
+                  arcGlow={agentArcGlow}
+                  arcColor={agentArcColor}
                   phaseOffset={idx * 0.53}
                   sharedUniforms={sharedUniforms}
+                />
+              )}
+              {isTerrain && (
+                <TerrainLayer
+                  layerY={layer.y}
+                  layerT={t}
+                  size={planeSize}
+                  gridN={terrainGridN}
+                  dotSize={terrainDotSize}
+                  opacity={terrainOpacity}
+                  heightScale={terrainHeightScale}
+                  rampC0={terrainRampC0}
+                  rampC1={terrainRampC1}
+                  rampC2={terrainRampC2}
+                  rampC3={terrainRampC3}
+                  rampC4={terrainRampC4}
+                  rampC5={terrainRampC5}
+                  amplitude={amplitude}
+                  waveScale={waveScale}
+                  bottomBias={bottomBias}
+                  seed={seed * 0.1 + idx * 0.19}
+                  arcCount={agentArcCount}
+                  arcSpeed={agentArcSpeed}
+                  arcBallSpeed={agentArcBallSpeed}
+                  arcBallSize={agentArcBallSize}
+                  arcLift={agentArcLift}
+                  arcThickness={agentArcThickness}
+                  arcDashLength={agentArcDashLength}
+                  arcGlow={agentArcGlow}
+                  arcColor={agentArcColor}
                 />
               )}
               {isCloud && (
@@ -3689,6 +5364,45 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
             </group>
           );
         })}
+        {interlayerEnabled && layers.length >= 2 && (
+          <InterlayerConnectors
+            boxContents={boxContentByLayer}
+            layerContents={contentByLayer}
+            settings={settings}
+            sharedUniforms={sharedUniforms}
+            layers={layers}
+            layerConcept={layerConcept}
+            layerEscapeHeight={layerEscapeHeight}
+            cloudHeight={cloudHeight}
+            planeSize={planeSize}
+            wiresPerHub={interlayerWiresPerHub}
+            hubsPerSide={interlayerHubsPerSide}
+            waistDepth={interlayerWaistDepth}
+            fanRadius={interlayerFanRadius}
+            tubeRadius={interlayerTubeRadius}
+            opacity={interlayerOpacity}
+            topBlend={interlayerTopBlend}
+            bottomBlend={interlayerBottomBlend}
+            color={interlayerColor}
+            glow={interlayerGlow}
+            flowSpeed={interlayerFlowSpeed}
+            beadCount={interlayerBeadCount}
+            beadWidth={interlayerBeadWidth}
+            beadBrightness={interlayerBeadBrightness}
+            clusterSize={interlayerClusterSize}
+            capSize={interlayerCapSize}
+            seed={interlayerSeed}
+            wiresPerHubByPair={interlayerWiresPerHubByPair}
+            enabledByPair={interlayerEnabledByPair}
+            layerColors={connectorLayerColors}
+            cascade={interlayerCascade}
+            usePalette={interlayerUsePalette}
+            paletteBottom={interlayerPaletteBottom}
+            paletteMid={interlayerPaletteMid}
+            paletteTop={interlayerPaletteTop}
+            style={interlayerStyle}
+          />
+        )}
         <FrameEdges
           shape={frameShape}
           size={frameSize}
@@ -3761,7 +5475,7 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
       </group>
 
       {(layerBlur > 0 || bloomIntensity > 0 || vignette > 0) && (
-        <EffectComposer>
+        <EffectComposer multisampling={8}>
           {layerBlur > 0 ? (
             <DepthOfField
               focusDistance={blurFocus / 100}
@@ -3773,7 +5487,7 @@ export function MeshStrataScene({ settings }: { settings: StrataSettings }) {
           )}
           {bloomIntensity > 0 ? (
             <Bloom
-              intensity={bloomIntensity / 40}
+              intensity={bloomIntensity / 80}
               luminanceThreshold={bloomThreshold / 100}
               luminanceSmoothing={bloomSmoothing / 100}
               mipmapBlur

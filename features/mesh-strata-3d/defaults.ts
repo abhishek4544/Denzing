@@ -63,6 +63,7 @@ export const layerConceptOptions = [
   { value: "cloud", label: "Cloud" },
   { value: "agent", label: "Agent" },
   { value: "sparkle", label: "Sparkle" },
+  { value: "terrain", label: "Terrain" },
 ] as const;
 
 // The renderer also supports the original concept meshes, although the
@@ -93,6 +94,7 @@ export type StrataSettings = {
   layerConcept: LayerConcept[];
   /** Per-layer display name shown in the inspector (length = MAX_LAYERS). */
   layerNames: string[];
+  layerLabelFontSize: number;
   /** Per-layer escape height for "cloud" concept (0..100). */
   layerEscapeHeight: number[];
   /** Per-layer full sparkle slab thickness; null inherits sparkleHeight for older presets. */
@@ -141,6 +143,102 @@ export type StrataSettings = {
   agentSpawnRate: number;
   /** Amplitude below which a signal is culled (0..100 → 0..1). */
   agentMinAmplitude: number;
+
+  /** Number of concurrent bezier signal arcs riding above the lattice. */
+  agentArcCount: number;
+  /** Arc dash-race speed (0..100 → shader offset per second). */
+  agentArcSpeed: number;
+  agentArcBallSpeed: number;
+  agentArcBallSize: number;
+  /** Arc apex height relative to node distance (0..100 → 0..1× dist). */
+  agentArcLift: number;
+  /** Arc rendered thickness (informational — three.js Line stroke). */
+  agentArcThickness: number;
+  /** Dash length within one dash-period (0..100 → 0..1). */
+  agentArcDashLength: number;
+  /** Additive-glow multiplier applied to the arc color (0..100 → 0..2.5×). */
+  agentArcGlow: number;
+  /** Arc line/glow color. */
+  agentArcColor: string;
+
+  /** Terrain grid dots per side. */
+  terrainGridN: number;
+  /** Terrain dot size (world units × 0.001). */
+  terrainDotSize: number;
+  /** Extra height scale applied to the terrain wave for the ramp mapping. */
+  terrainHeightScale: number;
+  /** Terrain dot opacity (0..100). */
+  terrainOpacity: number;
+  /** Six-stop elevation ramp — blue → cyan → green → yellow → orange → magenta. */
+  terrainRampC0: string;
+  terrainRampC1: string;
+  terrainRampC2: string;
+  terrainRampC3: string;
+  terrainRampC4: string;
+  terrainRampC5: string;
+
+  /** Master toggle for the inter-layer connector fanout system. */
+  interlayerEnabled: boolean;
+  /** Wires per hub (fan-out density). */
+  interlayerWiresPerHub: number;
+  /** Hubs per side of an NxN grid, per layer pair. */
+  interlayerHubsPerSide: number;
+  /** Waist depth from the top layer, as % of the pair gap (0=at top, 100=at bottom). */
+  interlayerWaistDepth: number;
+  /** Radial reach of the fan on the bottom plate, as % of planeSize. */
+  interlayerFanRadius: number;
+  /** Tube radius (world × 0.001 × planeSize). */
+  interlayerTubeRadius: number;
+  /** Wire color. */
+  interlayerColor: string;
+  /** Emissive glow multiplier for the tube base (0..100 → 0..2.5×). */
+  interlayerGlow: number;
+  /** Upward-flow speed of the beads (0..100 → shader units/sec). */
+  interlayerFlowSpeed: number;
+  /** Beads per wire (integer, 1..30). */
+  interlayerBeadCount: number;
+  /** Bead width as fraction of dash period (0..100 → 0..0.5). */
+  interlayerBeadWidth: number;
+  /** Bead peak brightness multiplier (0..300 → 0..3×). */
+  interlayerBeadBrightness: number;
+  interlayerBallOpacity: number;
+  interlayerBallColor: string;
+  /** Terminal cap cluster size (caps per hub, 1..12). */
+  interlayerClusterSize: number;
+  /** Cap physical size (0..100 → 0..0.05 × planeSize). */
+  interlayerCapSize: number;
+  /** Randomization seed for hub / wire endpoints. */
+  interlayerSeed: number;
+  /** Per-pair wire count override (length = MAX_LAYERS - 1). null inherits interlayerWiresPerHub. */
+  interlayerWiresPerHubByPair: (number | null)[];
+  /** Per-pair enable override (length = MAX_LAYERS - 1). null inherits interlayerEnabled. */
+  interlayerEnabledByPair: (boolean | null)[];
+  /** Cascade strength (0..100). At 0, every pair uses the base wire count; at
+   * 100, only the bottom pair has full density and the top pair has zero. */
+  interlayerCascade: number;
+  /** When on, wire colors come from the 3-stop palette below instead of the
+   * two adjacent layer colors — lets you paint a global gradient across the
+   * whole stack (e.g. green → cyan → magenta). */
+  interlayerUsePalette: boolean;
+  /** Palette color at the bottom endpoint of each wire (source). */
+  interlayerPaletteBottom: string;
+  /** Palette color at the midpoint of each wire — the color the cable
+   * passes through halfway between the two plates. */
+  interlayerPaletteMid: string;
+  /** Palette color at the top endpoint of each wire (destination). */
+  interlayerPaletteTop: string;
+  /** Cable shape between two layers.
+   * - "strings": straight-ish vertical drops, no hub bottleneck (rain of fibers).
+   * - "fan": hub with cluster caps at top + fanning bezier to bottom plate. */
+  interlayerStyle: "strings" | "fan";
+  /** Wire opacity (0..100 → 0..1). Transparent below 100. */
+  interlayerOpacity: number;
+  interlayerTopBlend: number;
+  interlayerBottomBlend: number;
+  /** Random cross-wiring in strings mode (0..100). At 100, every wire's top
+   * endpoint is chosen independently of its bottom endpoint, producing a
+   * criss-cross scatter instead of parallel drops. */
+  interlayerRandomness: number;
 
   /** Sparkle radius as % of planeSize. */
   sparkleSize: number;
@@ -283,54 +381,106 @@ export type StrataSettings = {
 
 export const defaultStrataSettings: StrataSettings = {
   layerCount: 5,
-  layerGaps: [76, 93, 93, 80, 62, 62, 62, 62, 62, 62, 62, 62, 62],
-  layerColors: ["#f1e9da", "#9897f2", "#ffc35c", "#f9f0e1", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c"],
+  layerGaps: [112, 93, 91, 80, 62, 62, 62, 62, 62, 62, 62, 62, 62],
+  layerColors: ["#9897f2", "#f1e9da", "#f9f0e1", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c", "#ffc35c"],
   layerAmplitudes: [82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82, 82],
   layerWaveScales: [44, 44, 44, 44, 44, 44, 44, 44, 44, 44, 44, 44, 44, 44],
-  layerBaseOpacity: [35, 35, 24, 10, 45, 35, 35, 35, 35, 35, 35, 35, 35, 35],
+  layerBaseOpacity: [35, 35, 15, 14, 45, 35, 35, 35, 35, 35, 35, 35, 35, 35],
   layerContent: ["none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none", "none"],
-  layerConcept: ["agent", "sparkle", "cloud", "box", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform"],
-  layerNames: ["", "", "", "Data Foundation", "", "", "", "", "", "", "", "", "", ""],
-  layerEscapeHeight: [35, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35],
+  layerConcept: ["sparkle", "agent", "box", "cloud", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform", "uniform"],
+  layerLabelFontSize: 7,
+  layerNames: ["Ontology", "", "Ml eng", "", "Data Foundation", "", "", "", "", "", "", "", "", ""],
+  layerEscapeHeight: [35, 35, 35, 37, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35],
   layerSparkleHeight: Array(MAX_LAYERS).fill(null),
 
-  cloudDotSize: 0.5,
-  cloudColorB: "#fffafa",
-  cloudColorC: "#ddd5fb",
-  cloudDensity: 110,
-  cloudHeight: 71,
+  cloudDotSize: 0.75,
+  cloudColorB: "#e5fff9",
+  cloudColorC: "#a9ccf9",
+  cloudDensity: 172,
+  cloudHeight: 92,
   escapeSpeed: 100,
   escapeJitter: 100,
 
-  agentGridN: 15,
-  agentNodeSize: 18,
+  agentGridN: 24,
+  agentNodeSize: 15,
   agentEdgeOpacity: 23,
-  agentSignalCount: 300,
+  agentSignalCount: 274,
   agentSignalSpeed: 200,
-  agentSignalLength: 60,
-  agentSignalThickness: 6,
+  agentSignalLength: 43,
+  agentSignalThickness: 3,
   agentSignalColor: "#ffffff",
   agentNodeColor: "#ffffff",
   agentDecayLength: 100,
-  agentRefractory: 100,
+  agentRefractory: 95,
   agentJunctionSplit: false,
   agentSpawnRate: 100,
-  agentMinAmplitude: 50,
+  agentMinAmplitude: 42,
 
-  sparkleSize: 80,
-  sparklePinch: 32,
-  sparkleColor: "#000000",
-  sparklePulse: 97,
-  sparklePulseSpeed: 64,
-  sparkleSpin: 56,
+  agentArcCount: 24,
+  agentArcSpeed: 80,
+  agentArcBallSpeed: 100,
+  agentArcBallSize: 20,
+  agentArcLift: 8,
+  agentArcThickness: 21,
+  agentArcDashLength: 34,
+  agentArcGlow: 22,
+  agentArcColor: "#f7ffb8",
+
+  terrainGridN: 91,
+  terrainDotSize: 26,
+  terrainHeightScale: 66,
+  terrainOpacity: 92,
+  terrainRampC0: "#0a2540",
+  terrainRampC1: "#0f7a86",
+  terrainRampC2: "#3ec46b",
+  terrainRampC3: "#f4d03f",
+  terrainRampC4: "#ef7a2a",
+  terrainRampC5: "#f0389e",
+
+  interlayerEnabled: true,
+  interlayerWiresPerHub: 55,
+  interlayerHubsPerSide: 3,
+  interlayerWaistDepth: 22,
+  interlayerFanRadius: 85,
+  interlayerTubeRadius: 4,
+  interlayerColor: "#ffffff",
+  interlayerGlow: 45,
+  interlayerFlowSpeed: 65,
+  interlayerBeadCount: 6,
+  interlayerBeadWidth: 18,
+  interlayerBeadBrightness: 160,
+  interlayerBallOpacity: 85,
+  interlayerBallColor: "#ffffff",
+  interlayerClusterSize: 1,
+  interlayerCapSize: 0,
+  interlayerSeed: 42,
+  interlayerWiresPerHubByPair: Array(MAX_LAYERS - 1).fill(null),
+  interlayerEnabledByPair: Array(MAX_LAYERS - 1).fill(null),
+  interlayerCascade: 65,
+  interlayerUsePalette: false,
+  interlayerPaletteBottom: "#3ef07d",
+  interlayerPaletteMid: "#3fc9ff",
+  interlayerPaletteTop: "#c93de6",
+  interlayerStyle: "strings",
+  interlayerOpacity: 35,
+  interlayerTopBlend: 40,
+  interlayerBottomBlend: 40,
+  interlayerRandomness: 0,
+
+  sparkleSize: 68,
+  sparklePinch: 16,
+  sparkleColor: "#595959",
+  sparklePulse: 27,
+  sparklePulseSpeed: 57,
+  sparkleSpin: 69,
   sparkleBillboard: false,
-  sparkleHeight: 62,
+  sparkleHeight: 15,
   sparkleGlass: true,
-  sparkleGlassTint: "#ffffff",
-  sparkleGlassRoughness: 6,
-  sparkleGlassIOR: 150,
-  sparkleGlassReflection: 100,
-  sparkleBevel: 10,
+  sparkleGlassTint: "#42ffa7",
+  sparkleGlassRoughness: 83,
+  sparkleGlassIOR: 120,
+  sparkleGlassReflection: 199,
+  sparkleBevel: 24,
   sparkleSubtract: true,
   sparkleWave: 77,
   sparkleWaveSpeed: 46,
@@ -354,10 +504,10 @@ export const defaultStrataSettings: StrataSettings = {
   foundationVariance: 75,
   foundationCount: 14,
   foundationBoxGap: 7,
-  foundationFillOpacity: 18,
-  foundationEdgeOpacity: 27,
-  planeSize: 11.2,
-  segments: 73,
+  foundationFillOpacity: 14,
+  foundationEdgeOpacity: 23,
+  planeSize: 12,
+  segments: 79,
 
   amplitude: 94,
   waveScale: 47,

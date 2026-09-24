@@ -179,6 +179,22 @@ export function MeshStrata3DTool() {
     });
   }, []);
 
+  const setPairWires = useCallback((index: number, wires: number) => {
+    setSettings((current) => {
+      const next = current.interlayerWiresPerHubByPair.slice();
+      next[index] = wires;
+      return { ...current, interlayerWiresPerHubByPair: next };
+    });
+  }, []);
+
+  const setPairEnabled = useCallback((index: number, on: boolean) => {
+    setSettings((current) => {
+      const next = current.interlayerEnabledByPair.slice();
+      next[index] = on;
+      return { ...current, interlayerEnabledByPair: next };
+    });
+  }, []);
+
   const setAllLayerColors = useCallback((color: string) => {
     setSettings((current) => ({
       ...current,
@@ -234,7 +250,7 @@ export function MeshStrata3DTool() {
           }}
         >
           <Canvas
-            dpr={[1, 2]}
+            dpr={2}
             gl={{
               antialias: true,
               powerPreference: "high-performance",
@@ -397,6 +413,29 @@ export function MeshStrata3DTool() {
                   />
                 </div>
               )}
+              {!isLast && (
+                <div className="px-2 pb-1 space-y-1">
+                  <ToggleField
+                    label="Wires to next layer"
+                    checked={
+                      settings.interlayerEnabledByPair[i] ??
+                      settings.interlayerEnabled
+                    }
+                    onCheckedChange={(v) => setPairEnabled(i, v)}
+                  />
+                  <SliderField
+                    label="Wire Count"
+                    value={
+                      settings.interlayerWiresPerHubByPair[i] ??
+                      settings.interlayerWiresPerHub
+                    }
+                    min={0}
+                    max={80}
+                    step={1}
+                    onChange={(v) => setPairWires(i, v)}
+                  />
+                </div>
+              )}
             </div>
           );
         })}
@@ -433,6 +472,14 @@ export function MeshStrata3DTool() {
         </Section>
 
         <Section title="Stack">
+          <SliderField
+            label="Label Font Size"
+            value={settings.layerLabelFontSize}
+            min={7}
+            max={32}
+            step={1}
+            onChange={(v) => update("layerLabelFontSize", v)}
+          />
           <SliderField
             label="Layer Count"
             value={settings.layerCount}
@@ -982,6 +1029,357 @@ export function MeshStrata3DTool() {
             label="Junction Split"
             checked={settings.agentJunctionSplit}
             onCheckedChange={(v) => update("agentJunctionSplit", v)}
+          />
+          <SliderField
+            label="Arc Count"
+            value={settings.agentArcCount}
+            min={0}
+            max={80}
+            step={1}
+            onChange={(v) => update("agentArcCount", v)}
+          />
+          <SliderField
+            label="Arc Speed"
+            value={settings.agentArcSpeed}
+            min={0}
+            max={100}
+            onChange={(v) => update("agentArcSpeed", v)}
+          />
+          <SliderField
+            label="Arc Ball Speed"
+            value={settings.agentArcBallSpeed}
+            min={0}
+            max={300}
+            onChange={(v) => update("agentArcBallSpeed", v)}
+          />
+          <SliderField
+            label="Arc Ball Size"
+            value={settings.agentArcBallSize}
+            min={1}
+            max={100}
+            step={1}
+            onChange={(v) => update("agentArcBallSize", v)}
+          />
+          <SliderField
+            label="Arc Lift"
+            value={settings.agentArcLift}
+            min={0}
+            max={100}
+            onChange={(v) => update("agentArcLift", v)}
+          />
+          <SliderField
+            label="Arc Thickness"
+            value={settings.agentArcThickness}
+            min={0}
+            max={100}
+            onChange={(v) => update("agentArcThickness", v)}
+          />
+          <SliderField
+            label="Arc Dash Length"
+            value={settings.agentArcDashLength}
+            min={2}
+            max={60}
+            onChange={(v) => update("agentArcDashLength", v)}
+          />
+          <SliderField
+            label="Arc Glow"
+            value={settings.agentArcGlow}
+            min={0}
+            max={100}
+            onChange={(v) => update("agentArcGlow", v)}
+          />
+          <ColorField
+            label="Arc Color"
+            color={settings.agentArcColor}
+            opacity={100}
+            onColorChange={(v) => update("agentArcColor", v)}
+            onOpacityChange={() => {}}
+            showPipette={false}
+          />
+        </Section>
+
+        <Section title="Terrain">
+          <SliderField
+            label="Grid Resolution"
+            value={settings.terrainGridN}
+            min={30}
+            max={140}
+            step={1}
+            onChange={(v) => update("terrainGridN", v)}
+          />
+          <SliderField
+            label="Dot Size"
+            value={settings.terrainDotSize}
+            min={2}
+            max={100}
+            onChange={(v) => update("terrainDotSize", v)}
+          />
+          <SliderField
+            label="Height Scale"
+            value={settings.terrainHeightScale}
+            min={0}
+            max={100}
+            onChange={(v) => update("terrainHeightScale", v)}
+          />
+          <SliderField
+            label="Opacity"
+            value={settings.terrainOpacity}
+            min={0}
+            max={100}
+            onChange={(v) => update("terrainOpacity", v)}
+          />
+          <ColorField
+            label="Ramp Low"
+            color={settings.terrainRampC0}
+            opacity={100}
+            onColorChange={(v) => update("terrainRampC0", v)}
+            onOpacityChange={() => {}}
+            showPipette={false}
+          />
+          <ColorField
+            label="Ramp Mid-Low"
+            color={settings.terrainRampC1}
+            opacity={100}
+            onColorChange={(v) => update("terrainRampC1", v)}
+            onOpacityChange={() => {}}
+            showPipette={false}
+          />
+          <ColorField
+            label="Ramp Mid"
+            color={settings.terrainRampC2}
+            opacity={100}
+            onColorChange={(v) => update("terrainRampC2", v)}
+            onOpacityChange={() => {}}
+            showPipette={false}
+          />
+          <ColorField
+            label="Ramp Mid-High"
+            color={settings.terrainRampC3}
+            opacity={100}
+            onColorChange={(v) => update("terrainRampC3", v)}
+            onOpacityChange={() => {}}
+            showPipette={false}
+          />
+          <ColorField
+            label="Ramp High"
+            color={settings.terrainRampC4}
+            opacity={100}
+            onColorChange={(v) => update("terrainRampC4", v)}
+            onOpacityChange={() => {}}
+            showPipette={false}
+          />
+          <ColorField
+            label="Ramp Peak"
+            color={settings.terrainRampC5}
+            opacity={100}
+            onColorChange={(v) => update("terrainRampC5", v)}
+            onOpacityChange={() => {}}
+            showPipette={false}
+          />
+        </Section>
+
+        <Section title="Interlayer Fanout">
+          <ToggleField
+            label="Enabled"
+            checked={settings.interlayerEnabled}
+            onCheckedChange={(v) => update("interlayerEnabled", v)}
+          />
+          <SelectField
+            label="Style"
+            value={settings.interlayerStyle}
+            onChange={(v) =>
+              update("interlayerStyle", v as "strings" | "fan")
+            }
+            options={[
+              { value: "strings", label: "Strings" },
+              { value: "fan", label: "Hub Fan" },
+            ]}
+          />
+          <SliderField
+            label={settings.interlayerStyle === "fan" ? "Wires / Hub" : "Wires / Group"}
+            value={settings.interlayerWiresPerHub}
+            min={0}
+            max={80}
+            step={1}
+            onChange={(v) => update("interlayerWiresPerHub", v)}
+          />
+          <SliderField
+            label={settings.interlayerStyle === "fan" ? "Hubs / Side" : "Groups / Side"}
+            value={settings.interlayerHubsPerSide}
+            min={1}
+            max={4}
+            step={1}
+            onChange={(v) => update("interlayerHubsPerSide", v)}
+          />
+          <SliderField
+            label="Cascade"
+            value={settings.interlayerCascade}
+            min={0}
+            max={100}
+            onChange={(v) => update("interlayerCascade", v)}
+          />
+          {settings.interlayerStyle === "fan" && (
+            <SliderField
+              label="Waist Depth"
+              value={settings.interlayerWaistDepth}
+              min={0}
+              max={100}
+              onChange={(v) => update("interlayerWaistDepth", v)}
+            />
+          )}
+          <SliderField
+            label={settings.interlayerStyle === "fan" ? "Fan Radius" : "Wire Spread"}
+            value={settings.interlayerFanRadius}
+            min={0}
+            max={100}
+            onChange={(v) => update("interlayerFanRadius", v)}
+          />
+          <SliderField
+            label="Tube Radius"
+            value={settings.interlayerTubeRadius}
+            min={1}
+            max={40}
+            onChange={(v) => update("interlayerTubeRadius", v)}
+          />
+          <SliderField
+            label="Wire Opacity"
+            value={settings.interlayerOpacity}
+            min={0}
+            max={100}
+            onChange={(v) => update("interlayerOpacity", v)}
+          />
+          <SliderField
+            label="Top Opacity Fade"
+            value={settings.interlayerTopBlend}
+            min={0}
+            max={50}
+            onChange={(v) => update("interlayerTopBlend", v)}
+          />
+          <SliderField
+            label="Bottom Opacity Fade"
+            value={settings.interlayerBottomBlend}
+            min={0}
+            max={50}
+            onChange={(v) => update("interlayerBottomBlend", v)}
+          />
+          <ColorField
+            label="Wire Color"
+            color={settings.interlayerColor}
+            opacity={settings.interlayerOpacity}
+            onColorChange={(v) => update("interlayerColor", v)}
+            onOpacityChange={(v) => update("interlayerOpacity", v)}
+            showPipette={false}
+          />
+          <ToggleField
+            label="Use Palette"
+            checked={settings.interlayerUsePalette}
+            onCheckedChange={(v) => update("interlayerUsePalette", v)}
+          />
+          {settings.interlayerUsePalette && (
+            <>
+              <ColorField
+                label="Palette Bottom"
+                color={settings.interlayerPaletteBottom}
+                opacity={100}
+                onColorChange={(v) => update("interlayerPaletteBottom", v)}
+                onOpacityChange={() => {}}
+                showPipette={false}
+              />
+              <ColorField
+                label="Palette Mid"
+                color={settings.interlayerPaletteMid}
+                opacity={100}
+                onColorChange={(v) => update("interlayerPaletteMid", v)}
+                onOpacityChange={() => {}}
+                showPipette={false}
+              />
+              <ColorField
+                label="Palette Top"
+                color={settings.interlayerPaletteTop}
+                opacity={100}
+                onColorChange={(v) => update("interlayerPaletteTop", v)}
+                onOpacityChange={() => {}}
+                showPipette={false}
+              />
+            </>
+          )}
+          <SliderField
+            label="Glow"
+            value={settings.interlayerGlow}
+            min={0}
+            max={100}
+            onChange={(v) => update("interlayerGlow", v)}
+          />
+          <SliderField
+            label="Flow Speed"
+            value={settings.interlayerFlowSpeed}
+            min={0}
+            max={100}
+            onChange={(v) => update("interlayerFlowSpeed", v)}
+          />
+          <SliderField
+            label="Balls / Layer Gap"
+            value={settings.interlayerBeadCount}
+            min={1}
+            max={50}
+            step={1}
+            onChange={(v) => update("interlayerBeadCount", v)}
+          />
+          <SliderField
+            label="Ball Size"
+            value={settings.interlayerBeadWidth}
+            min={2}
+            max={80}
+            onChange={(v) => update("interlayerBeadWidth", v)}
+          />
+          <SliderField
+            label="Ball Opacity"
+            value={settings.interlayerBallOpacity}
+            min={0}
+            max={100}
+            onChange={(v) => update("interlayerBallOpacity", v)}
+          />
+          <ColorField
+            label="Ball Color"
+            color={settings.interlayerBallColor}
+            opacity={settings.interlayerBallOpacity}
+            onColorChange={(v) => update("interlayerBallColor", v)}
+            onOpacityChange={(v) => update("interlayerBallOpacity", v)}
+            showPipette={false}
+          />
+          <SliderField
+            label="Bead Brightness"
+            value={settings.interlayerBeadBrightness}
+            min={0}
+            max={300}
+            onChange={(v) => update("interlayerBeadBrightness", v)}
+          />
+          {settings.interlayerStyle === "fan" && (
+            <SliderField
+              label="Cluster Size"
+              value={settings.interlayerClusterSize}
+              min={1}
+              max={12}
+              step={1}
+              onChange={(v) => update("interlayerClusterSize", v)}
+            />
+          )}
+          {settings.interlayerStyle === "fan" && (
+            <SliderField
+              label="Cap Size"
+              value={settings.interlayerCapSize}
+              min={0}
+              max={100}
+              onChange={(v) => update("interlayerCapSize", v)}
+            />
+          )}
+          <SliderField
+            label="Seed"
+            value={settings.interlayerSeed}
+            min={0}
+            max={100}
+            step={1}
+            onChange={(v) => update("interlayerSeed", v)}
           />
         </Section>
 

@@ -4,6 +4,7 @@ export {
   CanvasArea,
   ControlsPanel,
 } from "./tool-shell";
+export { LayersPanel } from "./layers-panel";
 export { Section } from "./section";
 export { FieldRow } from "./field-row";
 export { SliderField } from "./slider-field";

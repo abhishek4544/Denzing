@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { MeshStrata3DLabTool } from "@/features/mesh-strata-3d-lab/mesh-strata-3d-lab-tool";
 import { MeshStrata3DTool } from "@/features/mesh-strata-3d/mesh-strata-3d-tool";
 import { OntologyExplorer3DTool } from "@/features/ontology-explorer-3d/ontology-explorer-3d-tool";
 import { getTool, tools } from "@/features/tool-registry";
@@ -22,5 +23,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
       return <OntologyExplorer3DTool />;
     case "mesh-strata-3d":
       return <MeshStrata3DTool />;
+    case "mesh-strata-3d-lab":
+      return <MeshStrata3DLabTool />;
   }
 }

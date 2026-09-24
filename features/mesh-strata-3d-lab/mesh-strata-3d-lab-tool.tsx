@@ -21,16 +21,14 @@ import {
 import { downloadPreset, pickPresetFile } from "@/features/preset-io";
 import { tools } from "@/features/tool-registry";
 import {
+  contentTypeOptions,
   defaultStrataSettings,
   frameColorPresets,
   frameShapeOptions,
-  glassEnvOptions,
-  layerConceptOptions,
   MAX_LAYERS,
+  type ContentType,
   type FrameColorPreset,
   type FrameShape,
-  type GlassEnv,
-  type LayerConcept,
   type StrataSettings,
 } from "./defaults";
 import { MeshStrataScene } from "./scene";
@@ -58,7 +56,7 @@ function ExposureSync() {
   return null;
 }
 
-export function MeshStrata3DTool() {
+export function MeshStrata3DLabTool() {
   const [settings, setSettings] = useState<StrataSettings>(defaultStrataSettings);
   const canvasHostRef = useRef<HTMLDivElement>(null);
 
@@ -72,12 +70,12 @@ export function MeshStrata3DTool() {
   const onReset = useCallback(() => setSettings(defaultStrataSettings), []);
 
   const onSavePreset = useCallback(() => {
-    downloadPreset<StrataSettings>("mesh-strata-3d", settings);
+    downloadPreset<StrataSettings>("mesh-strata-3d-lab", settings);
   }, [settings]);
 
   const onLoadPreset = useCallback(() => {
     pickPresetFile<StrataSettings>(
-      "mesh-strata-3d",
+      "mesh-strata-3d-lab",
       (loaded) => setSettings({ ...defaultStrataSettings, ...loaded }),
       (msg) => {
         if (typeof window !== "undefined") window.alert(`Preset load failed: ${msg}`);
@@ -93,23 +91,12 @@ export function MeshStrata3DTool() {
     });
   }, []);
 
-  const setLayerConcept = useCallback(
-    (index: number, concept: LayerConcept) => {
+  const setLayerContentType = useCallback(
+    (index: number, type: ContentType) => {
       setSettings((current) => {
-        const next = current.layerConcept.slice();
-        next[index] = concept;
-        return { ...current, layerConcept: next };
-      });
-    },
-    [],
-  );
-
-  const setLayerBaseOpacity = useCallback(
-    (index: number, value: number) => {
-      setSettings((current) => {
-        const next = current.layerBaseOpacity.slice();
-        next[index] = value;
-        return { ...current, layerBaseOpacity: next };
+        const next = current.layerContent.slice();
+        next[index] = type;
+        return { ...current, layerContent: next };
       });
     },
     [],
@@ -122,17 +109,6 @@ export function MeshStrata3DTool() {
       return { ...current, layerNames: next };
     });
   }, []);
-
-  const setLayerEscapeHeight = useCallback(
-    (index: number, value: number) => {
-      setSettings((current) => {
-        const next = current.layerEscapeHeight.slice();
-        next[index] = value;
-        return { ...current, layerEscapeHeight: next };
-      });
-    },
-    [],
-  );
 
   const moveLayer = useCallback((from: number, to: number) => {
     if (from === to) return;
@@ -147,12 +123,9 @@ export function MeshStrata3DTool() {
         ...current,
         layerColors: move(current.layerColors),
         layerContent: move(current.layerContent),
-        layerConcept: move(current.layerConcept),
-        layerBaseOpacity: move(current.layerBaseOpacity),
         layerAmplitudes: move(current.layerAmplitudes),
         layerWaveScales: move(current.layerWaveScales),
         layerNames: move(current.layerNames),
-        layerEscapeHeight: move(current.layerEscapeHeight),
       };
     });
   }, []);
@@ -213,9 +186,9 @@ export function MeshStrata3DTool() {
 
   return (
     <ToolShell
-      toolLabel="Mesh Strata 3D"
+      toolLabel="Mesh Strata Lab"
       tools={tools}
-      activeToolId="mesh-strata-3d"
+      activeToolId="mesh-strata-3d-lab"
       onExport={onExport}
     >
       <CanvasArea hasLeftPanel>
@@ -321,50 +294,20 @@ export function MeshStrata3DTool() {
                   aria-label={`Layer ${i + 1} name`}
                 />
                 <select
-                  value={settings.layerConcept[i] ?? "uniform"}
+                  value={settings.layerContent[i] ?? "none"}
                   onChange={(e) =>
-                    setLayerConcept(i, e.target.value as LayerConcept)
+                    setLayerContentType(i, e.target.value as ContentType)
                   }
-                  className="h-[21px] rounded-[5px] bg-muted border-none text-[10px] font-medium text-foreground px-1 outline-none shrink-0 max-w-[100px]"
-                  aria-label={`Layer ${i + 1} concept`}
+                  className="h-[21px] rounded-[5px] bg-muted border-none text-[10px] font-medium text-foreground px-1 outline-none shrink-0 max-w-[86px]"
+                  aria-label={`Layer ${i + 1} content type`}
                 >
-                  {layerConceptOptions.map((o) => (
+                  {contentTypeOptions.map((o) => (
                     <option key={o.value} value={o.value}>
                       {o.label}
                     </option>
                   ))}
                 </select>
               </div>
-              {(settings.layerConcept[i] === "box" ||
-                settings.layerConcept[i] === "uniform") && (
-                <div className="px-2 pb-1">
-                  <SliderField
-                    label="Base Opacity"
-                    value={settings.layerBaseOpacity[i] ?? 35}
-                    min={0}
-                    max={100}
-                    onChange={(v) => setLayerBaseOpacity(i, v)}
-                  />
-                </div>
-              )}
-              {settings.layerConcept[i] === "cloud" && (
-                <div className="px-2 pb-1 space-y-1">
-                  <SliderField
-                    label="Base Opacity"
-                    value={settings.layerBaseOpacity[i] ?? 35}
-                    min={0}
-                    max={100}
-                    onChange={(v) => setLayerBaseOpacity(i, v)}
-                  />
-                  <SliderField
-                    label="Escape Height"
-                    value={settings.layerEscapeHeight[i] ?? 35}
-                    min={0}
-                    max={100}
-                    onChange={(v) => setLayerEscapeHeight(i, v)}
-                  />
-                </div>
-              )}
               {!isLast && (
                 <div className="px-2 pb-1">
                   <SliderField
@@ -639,348 +582,6 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Glass">
-          <ToggleField
-            label="Enable Glass"
-            checked={settings.frameGlass}
-            onCheckedChange={(v) => update("frameGlass", v)}
-          />
-          <SelectField
-            label="Environment"
-            value={settings.frameGlassEnv}
-            onChange={(v) => update("frameGlassEnv", v as GlassEnv)}
-            options={glassEnvOptions.map((o) => ({
-              value: o.value,
-              label: o.label,
-            }))}
-          />
-          <ColorField
-            label="Inside"
-            color={settings.frameGlassTint}
-            opacity={100}
-            onColorChange={(v) => update("frameGlassTint", v)}
-            onOpacityChange={() => {}}
-            showPipette={false}
-          />
-          <ColorField
-            label="Stroke"
-            color={settings.frameColor}
-            opacity={settings.frameOpacity}
-            onColorChange={(v) => {
-              update("frameColor", v);
-              update("frameColorPreset", "custom");
-            }}
-            onOpacityChange={(v) => update("frameOpacity", v)}
-            showPipette={false}
-          />
-          <SliderField
-            label="Roughness"
-            value={settings.frameGlassRoughness}
-            min={0}
-            max={100}
-            onChange={(v) => update("frameGlassRoughness", v)}
-          />
-          <SliderField
-            label="IOR"
-            value={settings.frameGlassIOR}
-            min={100}
-            max={250}
-            onChange={(v) => update("frameGlassIOR", v)}
-          />
-          <SliderField
-            label="Thickness"
-            value={settings.frameGlassThickness}
-            min={0}
-            max={100}
-            onChange={(v) => update("frameGlassThickness", v)}
-          />
-          <SliderField
-            label="Chromatic"
-            value={settings.frameGlassChromatic}
-            min={0}
-            max={100}
-            onChange={(v) => update("frameGlassChromatic", v)}
-          />
-          <SliderField
-            label="Anisotropy"
-            value={settings.frameGlassAnisotropy}
-            min={0}
-            max={100}
-            onChange={(v) => update("frameGlassAnisotropy", v)}
-          />
-          <SliderField
-            label="Distortion"
-            value={settings.frameGlassDistortion}
-            min={0}
-            max={100}
-            onChange={(v) => update("frameGlassDistortion", v)}
-          />
-          <SliderField
-            label="Attenuation"
-            value={settings.frameGlassAttenuation}
-            min={0}
-            max={100}
-            onChange={(v) => update("frameGlassAttenuation", v)}
-          />
-          <ToggleField
-            label="Backside Refraction"
-            checked={settings.frameGlassBackside}
-            onCheckedChange={(v) => update("frameGlassBackside", v)}
-          />
-        </Section>
-
-        <Section title="Sparkle">
-          <ColorField
-            label="Color"
-            color={settings.sparkleColor}
-            opacity={100}
-            onColorChange={(v) => update("sparkleColor", v)}
-            onOpacityChange={() => {}}
-            showPipette={false}
-          />
-          <SliderField
-            label="Size"
-            value={settings.sparkleSize}
-            min={5}
-            max={100}
-            onChange={(v) => update("sparkleSize", v)}
-          />
-          <SliderField
-            label="Pinch"
-            value={settings.sparklePinch}
-            min={5}
-            max={45}
-            onChange={(v) => update("sparklePinch", v)}
-          />
-          <SliderField
-            label="Pulse"
-            value={settings.sparklePulse}
-            min={0}
-            max={100}
-            onChange={(v) => update("sparklePulse", v)}
-          />
-          <SliderField
-            label="Pulse Speed"
-            value={settings.sparklePulseSpeed}
-            min={0}
-            max={100}
-            onChange={(v) => update("sparklePulseSpeed", v)}
-          />
-          <SliderField
-            label="Spin (mesh · hole)"
-            value={settings.sparkleSpin}
-            min={0}
-            max={100}
-            onChange={(v) => update("sparkleSpin", v)}
-          />
-          <SliderField
-            label="Height"
-            value={settings.sparkleHeight}
-            min={0}
-            max={100}
-            onChange={(v) => update("sparkleHeight", v)}
-          />
-          <SliderField
-            label="Bevel"
-            value={settings.sparkleBevel}
-            min={0}
-            max={45}
-            onChange={(v) => update("sparkleBevel", v)}
-          />
-          <ToggleField
-            label="Subtract (Carve)"
-            checked={settings.sparkleSubtract}
-            onCheckedChange={(v) => update("sparkleSubtract", v)}
-          />
-          <SliderField
-            label="Wave"
-            value={settings.sparkleWave}
-            min={0}
-            max={100}
-            onChange={(v) => update("sparkleWave", v)}
-          />
-          <SliderField
-            label="Wave Speed"
-            value={settings.sparkleWaveSpeed}
-            min={0}
-            max={100}
-            onChange={(v) => update("sparkleWaveSpeed", v)}
-          />
-          <SliderField
-            label="Wave Height"
-            value={settings.sparkleWaveHeight}
-            min={0}
-            max={200}
-            onChange={(v) => update("sparkleWaveHeight", v)}
-          />
-          <ToggleField
-            label="Billboard (flat only)"
-            checked={settings.sparkleBillboard}
-            onCheckedChange={(v) => update("sparkleBillboard", v)}
-          />
-        </Section>
-
-        <Section title="Agent">
-          <ColorField
-            label="Signal Color"
-            color={settings.agentSignalColor}
-            opacity={100}
-            onColorChange={(v) => update("agentSignalColor", v)}
-            onOpacityChange={() => {}}
-            showPipette={false}
-          />
-          <ColorField
-            label="Node Color"
-            color={settings.agentNodeColor}
-            opacity={100}
-            onColorChange={(v) => update("agentNodeColor", v)}
-            onOpacityChange={() => {}}
-            showPipette={false}
-          />
-          <SliderField
-            label="Grid Size"
-            value={settings.agentGridN}
-            min={4}
-            max={32}
-            step={1}
-            onChange={(v) => update("agentGridN", v)}
-          />
-          <SliderField
-            label="Node Size"
-            value={settings.agentNodeSize}
-            min={2}
-            max={100}
-            step={1}
-            onChange={(v) => update("agentNodeSize", v)}
-          />
-          <SliderField
-            label="Edge Opacity"
-            value={settings.agentEdgeOpacity}
-            min={0}
-            max={100}
-            onChange={(v) => update("agentEdgeOpacity", v)}
-          />
-          <SliderField
-            label="Signal Count"
-            value={settings.agentSignalCount}
-            min={0}
-            max={300}
-            step={1}
-            onChange={(v) => update("agentSignalCount", v)}
-          />
-          <SliderField
-            label="Signal Speed"
-            value={settings.agentSignalSpeed}
-            min={0}
-            max={200}
-            onChange={(v) => update("agentSignalSpeed", v)}
-          />
-          <SliderField
-            label="Signal Length"
-            value={settings.agentSignalLength}
-            min={10}
-            max={100}
-            onChange={(v) => update("agentSignalLength", v)}
-          />
-          <SliderField
-            label="Signal Thickness"
-            value={settings.agentSignalThickness}
-            min={1}
-            max={100}
-            step={1}
-            onChange={(v) => update("agentSignalThickness", v)}
-          />
-          <SliderField
-            label="Decay Length"
-            value={settings.agentDecayLength}
-            min={1}
-            max={100}
-            onChange={(v) => update("agentDecayLength", v)}
-          />
-          <SliderField
-            label="Node Refractory"
-            value={settings.agentRefractory}
-            min={0}
-            max={100}
-            onChange={(v) => update("agentRefractory", v)}
-          />
-          <SliderField
-            label="Spawn Rate"
-            value={settings.agentSpawnRate}
-            min={0}
-            max={100}
-            onChange={(v) => update("agentSpawnRate", v)}
-          />
-          <SliderField
-            label="Min Amplitude"
-            value={settings.agentMinAmplitude}
-            min={0}
-            max={50}
-            onChange={(v) => update("agentMinAmplitude", v)}
-          />
-          <ToggleField
-            label="Junction Split"
-            checked={settings.agentJunctionSplit}
-            onCheckedChange={(v) => update("agentJunctionSplit", v)}
-          />
-        </Section>
-
-        <Section title="Cloud">
-          <ColorField
-            label="Color A"
-            color={settings.cloudColorB}
-            opacity={100}
-            onColorChange={(v) => update("cloudColorB", v)}
-            onOpacityChange={() => {}}
-            showPipette={false}
-          />
-          <ColorField
-            label="Color B"
-            color={settings.cloudColorC}
-            opacity={100}
-            onColorChange={(v) => update("cloudColorC", v)}
-            onOpacityChange={() => {}}
-            showPipette={false}
-          />
-          <SliderField
-            label="Dot Size"
-            value={settings.cloudDotSize}
-            min={0.25}
-            max={100}
-            step={0.25}
-            onChange={(v) => update("cloudDotSize", v)}
-          />
-          <SliderField
-            label="Density"
-            value={settings.cloudDensity}
-            min={16}
-            max={200}
-            step={1}
-            onChange={(v) => update("cloudDensity", v)}
-          />
-          <SliderField
-            label="Height"
-            value={settings.cloudHeight}
-            min={0}
-            max={200}
-            onChange={(v) => update("cloudHeight", v)}
-          />
-          <SliderField
-            label="Escape Speed"
-            value={settings.escapeSpeed}
-            min={0}
-            max={100}
-            onChange={(v) => update("escapeSpeed", v)}
-          />
-          <SliderField
-            label="Ceiling Jitter"
-            value={settings.escapeJitter}
-            min={0}
-            max={100}
-            onChange={(v) => update("escapeJitter", v)}
-          />
-        </Section>
-
         <Section title="Blur">
           <SliderField
             label="Layer Blur"
@@ -1064,7 +665,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Data Foundation (Box)">
+        <Section title="Data Foundation">
           <ColorField
             label="Color"
             color={settings.foundationColor}
@@ -1074,19 +675,12 @@ export function MeshStrata3DTool() {
             showPipette={false}
           />
           <SliderField
-            label="Boxes / Side"
-            value={settings.foundationCount}
-            min={1}
-            max={28}
+            label="Density"
+            value={settings.foundationDensity}
+            min={2}
+            max={12}
             step={1}
-            onChange={(v) => update("foundationCount", v)}
-          />
-          <SliderField
-            label="Box Gap"
-            value={settings.foundationBoxGap}
-            min={0}
-            max={90}
-            onChange={(v) => update("foundationBoxGap", v)}
+            onChange={(v) => update("foundationDensity", v)}
           />
           <SliderField
             label="Block Size"
@@ -1094,13 +688,6 @@ export function MeshStrata3DTool() {
             min={10}
             max={120}
             onChange={(v) => update("foundationBlockSize", v)}
-          />
-          <SliderField
-            label="Min Thickness"
-            value={settings.foundationMinThickness}
-            min={0}
-            max={100}
-            onChange={(v) => update("foundationMinThickness", v)}
           />
           <SliderField
             label="Max Height"
@@ -1115,20 +702,6 @@ export function MeshStrata3DTool() {
             min={0}
             max={100}
             onChange={(v) => update("foundationVariance", v)}
-          />
-          <SliderField
-            label="Fill Opacity"
-            value={settings.foundationFillOpacity}
-            min={0}
-            max={100}
-            onChange={(v) => update("foundationFillOpacity", v)}
-          />
-          <SliderField
-            label="Edge Opacity"
-            value={settings.foundationEdgeOpacity}
-            min={0}
-            max={100}
-            onChange={(v) => update("foundationEdgeOpacity", v)}
           />
         </Section>
 

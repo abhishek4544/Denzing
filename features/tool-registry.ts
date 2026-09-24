@@ -25,6 +25,13 @@ export const tools: readonly ToolDefinition[] = [
       "Stacked wireframe wave layers with a crimson core in a gold cube frame.",
     href: "/tools/mesh-strata-3d",
   },
+  {
+    id: "mesh-strata-3d-lab",
+    label: "Mesh Strata Lab",
+    description:
+      "Experimental variant of Mesh Strata 3D for in-progress content types.",
+    href: "/tools/mesh-strata-3d-lab",
+  },
 ];
 
 export const defaultTool = tools[0];

@@ -1,10 +1,26 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type ComponentRef,
+} from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+} from "@/components/ui/select";
 import {
   CanvasArea,
   ColorField,
@@ -19,11 +35,14 @@ import { tools } from "@/features/tool-registry";
 import { ConstellationCanvas } from "./constellation-canvas";
 import {
   backgroundOptions,
+  canvasAspectOptions,
+  canvasAspectValue,
   defaultExplorerSettings,
   focusOptions,
   layerOptions,
   layoutOptions,
   viewModeOptions,
+  type CanvasAspect,
   type ExplorerSettings,
   type LayerId,
   type ViewMode,
@@ -31,7 +50,9 @@ import {
 import { BigDataBurstScene } from "./burst-scene";
 import { BurstHud } from "./burst-hud";
 import { CosmosHud } from "./cosmos-hud";
+import { CustomAspectDialog } from "./custom-aspect-dialog";
 import { exportOntologyScene } from "./export-image";
+import type { ExportCamera } from "./export-options";
 import { OntologyScene } from "./scene";
 import {
   initialModelState,
@@ -39,6 +60,8 @@ import {
   type ModelEdge,
   type ModelNode,
 } from "./model";
+
+const ExportDialog = lazy(() => import("./export-dialog"));
 
 function CameraFov({ fov }: { fov: number }) {
   const get = useThree((s) => s.get);
@@ -66,6 +89,13 @@ export function OntologyExplorer3DTool() {
   const [settings, setSettings] = useState<ExplorerSettings>(defaultExplorerSettings);
   const [model, dispatch] = useReducer(modelReducer, undefined, initialModelState);
   const canvasHostRef = useRef<HTMLDivElement>(null);
+  const orbitControlsRef = useRef<ComponentRef<typeof OrbitControls>>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [customAspectOpen, setCustomAspectOpen] = useState(false);
+  const [exportCamera, setExportCamera] = useState<ExportCamera>({
+    position: [10, 6, 12],
+    target: [0, 0, 0],
+  });
   // Preview override: while the user's pointer sits on a Focus Kind option,
   // the scene reads THIS value instead of the persisted focusKind.
   const [hoverFocusKind, setHoverFocusKind] = useState<
@@ -79,6 +109,14 @@ export function OntologyExplorer3DTool() {
     [],
   );
 
+  const selectAspect = useCallback(
+    (value: CanvasAspect) => {
+      if (value === "custom") setCustomAspectOpen(true);
+      else update("canvasAspect", value);
+    },
+    [update],
+  );
+
   const toggleLayer = useCallback((layer: LayerId, value: boolean) => {
     setSettings((current) => ({
       ...current,
@@ -86,7 +124,7 @@ export function OntologyExplorer3DTool() {
     }));
   }, []);
 
-  const onExport = useCallback(() => {
+  const onPngExport = useCallback(() => {
     const host = canvasHostRef.current;
     if (!host) return;
     // Prefer the 3D WebGL canvas if it's mounted; otherwise capture the SVG.
@@ -108,6 +146,21 @@ export function OntologyExplorer3DTool() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     }
+  }, []);
+
+  const onExport = useCallback(() => {
+    const controls = orbitControlsRef.current;
+    const rect = canvasHostRef.current
+      ?.querySelector("canvas")
+      ?.getBoundingClientRect();
+    if (controls) {
+      setExportCamera({
+        position: controls.object.position.toArray() as [number, number, number],
+        target: controls.target.toArray() as [number, number, number],
+        viewport: rect ? { width: rect.width, height: rect.height } : undefined,
+      });
+    }
+    setExportOpen(true);
   }, []);
 
   const onReset = useCallback(() => {
@@ -134,13 +187,81 @@ export function OntologyExplorer3DTool() {
     [settings, hoverFocusKind],
   );
 
+  const aspect = canvasAspectValue(
+    settings.canvasAspect,
+    settings.canvasAspectWidth,
+    settings.canvasAspectHeight,
+  );
+
   return (
     <ToolShell
       toolLabel="Ontology Explorer"
       tools={tools}
       activeToolId="ontology-explorer-3d"
+      topbarActions={
+        <Select
+          value={settings.canvasAspect ?? "auto"}
+          onValueChange={(value) => {
+            if (value !== null) selectAspect(value as CanvasAspect);
+          }}
+        >
+          <SelectTrigger
+            aria-label="Canvas aspect ratio"
+            className="!h-[40px] !w-auto min-w-[138px] !rounded-[8px] !border-border !bg-card !px-3 !text-[14px] !font-medium shadow-none"
+          >
+            <span>
+              Ratio ·{" "}
+              {settings.canvasAspect && settings.canvasAspect !== "auto"
+                ? settings.canvasAspect === "custom"
+                  ? `${settings.canvasAspectWidth ?? 16}:${settings.canvasAspectHeight ?? 9}`
+                  : settings.canvasAspect
+                : "Auto"}
+            </span>
+          </SelectTrigger>
+          <SelectContent>
+            {canvasAspectOptions.map((option) => (
+              <SelectItem
+                key={option.value}
+                value={option.value}
+                onClick={() => {
+                  if (option.value === "custom") setCustomAspectOpen(true);
+                }}
+              >
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      }
       onExport={onExport}
     >
+      {customAspectOpen && (
+        <CustomAspectDialog
+          width={settings.canvasAspectWidth ?? 16}
+          height={settings.canvasAspectHeight ?? 9}
+          onClose={() => setCustomAspectOpen(false)}
+          onApply={(width, height) => {
+            setSettings((current) => ({
+              ...current,
+              canvasAspect: "custom",
+              canvasAspectWidth: width,
+              canvasAspectHeight: height,
+            }));
+            setCustomAspectOpen(false);
+          }}
+        />
+      )}
+      {exportOpen && (
+        <Suspense fallback={null}>
+          <ExportDialog
+            settings={settings}
+            model={model}
+            camera={exportCamera}
+            onPng={onPngExport}
+            onClose={() => setExportOpen(false)}
+          />
+        </Suspense>
+      )}
       <CanvasArea>
         <div
           ref={canvasHostRef}
@@ -148,8 +269,19 @@ export function OntologyExplorer3DTool() {
           style={{
             boxShadow:
               "inset 0 0 0 1px rgba(255,255,255,0.05), 0 22px 60px -30px rgba(0,0,0,0.65)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            containerType: "size",
           }}
         >
+          <div
+            className="relative overflow-hidden"
+            style={{
+              width: aspect ? `min(100cqw, ${aspect * 100}cqh)` : "100%",
+              height: aspect ? `min(100cqh, ${100 / aspect}cqw)` : "100%",
+            }}
+          >
           {settings.viewMode === "constellation-2d" ? (
             <ConstellationCanvas
               model={model}
@@ -173,6 +305,7 @@ export function OntologyExplorer3DTool() {
                 <ExposureSync />
                 <CameraFov fov={settings.fov} />
                 <OrbitControls
+                  ref={orbitControlsRef}
                   enableDamping
                   dampingFactor={0.08}
                   minDistance={6}
@@ -206,6 +339,7 @@ export function OntologyExplorer3DTool() {
               )}
             </>
           )}
+          </div>
         </div>
       </CanvasArea>
 
@@ -240,6 +374,22 @@ export function OntologyExplorer3DTool() {
               onCheckedChange={(value) => toggleLayer(option.value, value)}
             />
           ))}
+          <SliderField
+            label="Label Font Size"
+            value={settings.layerLabelFontSize}
+            min={7}
+            max={32}
+            step={1}
+            onChange={(value) => update("layerLabelFontSize", value)}
+          />
+          <SliderField
+            label="Label Scale"
+            value={settings.layerLabelScale}
+            min={50}
+            max={300}
+            step={1}
+            onChange={(value) => update("layerLabelScale", value)}
+          />
           <SelectField
             label="Focus kind"
             value={settings.focusKind}
@@ -252,6 +402,21 @@ export function OntologyExplorer3DTool() {
         </Section>
 
         <Section title="Nodes">
+          <ToggleField
+            label="Show Box"
+            checked={settings.boxVisible}
+            onCheckedChange={(value) => update("boxVisible", value)}
+          />
+          <ToggleField
+            label="Box Solid"
+            checked={settings.boxSolid}
+            onCheckedChange={(value) => update("boxSolid", value)}
+          />
+          <ToggleField
+            label="Box Stroke"
+            checked={settings.boxStroke}
+            onCheckedChange={(value) => update("boxStroke", value)}
+          />
           <SliderField
             label="Node Size"
             value={settings.nodeSize}

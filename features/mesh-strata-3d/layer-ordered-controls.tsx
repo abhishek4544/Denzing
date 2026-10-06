@@ -16,7 +16,7 @@ const layerSections: Partial<Record<LayerConcept, readonly string[]>> = {
 export function LayerOrderedControls({ concepts, children }: { concepts: readonly LayerConcept[]; children: ReactNode }) {
   const [openTitle, setOpenTitle] = useState<string | null>(null);
   const order = [...new Set([
-    "Preset", "Stack", "Camera",
+    "Preset", "Stack", "Source Slabs", "Camera",
     ...concepts.flatMap((concept) => layerSections[concept] ?? []),
     // Retain unused types after the active layers so their settings remain accessible.
     "Sparkle", "Agent", "Platforms", "Data Foundation (Box)", "Cloud", "Terrain", "Deformation",

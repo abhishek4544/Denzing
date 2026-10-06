@@ -21,6 +21,7 @@ import * as THREE from "three";
 import type { ExplorerSettings, LayerId } from "./defaults";
 import { kindLabels } from "./defaults";
 import type { OntologyEdge, OntologyNode } from "./fixture";
+import { LayerNameLabel } from "./layer-name-label";
 
 const LAYER_HEIGHT: Record<LayerId, number> = {
   sources: -9.5,
@@ -328,8 +329,8 @@ function ChildScatter({
   }, [children]);
 
   const twinkleRefs = useRef<(THREE.Mesh | null)[]>([]);
-  useFrame(({ clock }) => {
-    const t = clock.getElapsedTime();
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
     for (let i = 0; i < twinkleRefs.current.length; i += 1) {
       const m = twinkleRefs.current[i];
       if (!m) continue;
@@ -409,23 +410,24 @@ function OrbitRings({
   const groupB = useRef<THREE.Group>(null);
   const groupC = useRef<THREE.Group>(null);
 
-  useFrame((_s, delta) => {
-    if (groupA.current) {
-      groupA.current.rotation.y += delta * 0.22;
-      groupA.current.rotation.x += delta * 0.05;
-    }
-    if (groupB.current) {
-      groupB.current.rotation.z += delta * 0.14;
-      groupB.current.rotation.y -= delta * 0.09;
-    }
-    if (groupC.current) {
-      groupC.current.rotation.x += delta * 0.19;
-    }
-  });
-
   const seedRand = useMemo(() => seededRand(seed), [seed]);
   const tiltA = useMemo(() => (seedRand() - 0.5) * 0.6, [seedRand]);
   const tiltB = useMemo(() => (seedRand() - 0.5) * 0.6, [seedRand]);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (groupA.current) {
+      groupA.current.rotation.y = t * 0.22;
+      groupA.current.rotation.x = tiltA + t * 0.05;
+    }
+    if (groupB.current) {
+      groupB.current.rotation.z = tiltB + t * 0.14;
+      groupB.current.rotation.y = -t * 0.09;
+    }
+    if (groupC.current) {
+      groupC.current.rotation.x = t * 0.19;
+    }
+  });
 
   return (
     <group>
@@ -484,9 +486,9 @@ function HubNode({
     return (h % 1000) / 1000;
   }, [node.id]);
 
-  useFrame(({ clock }) => {
+  useFrame((state) => {
     if (!groupRef.current) return;
-    const t = clock.getElapsedTime();
+    const t = state.clock.elapsedTime;
     groupRef.current.rotation.y = t * 0.05 + phase * Math.PI * 2;
   });
 
@@ -610,9 +612,9 @@ function HubEdge({
   }, [from, to, settings.edgeCurvature]);
 
   const pulseRef = useRef<THREE.Mesh>(null);
-  useFrame(({ clock }) => {
+  useFrame((state) => {
     if (!pulseRef.current) return;
-    const t = clock.getElapsedTime();
+    const t = state.clock.elapsedTime;
     const u = ((t * 0.15 + offset) % 1 + 1) % 1;
     const p = curve.getPointAt(u);
     pulseRef.current.position.copy(p);
@@ -811,10 +813,10 @@ export function OntologyScene({
   const focusActive = settings.focusKind !== "all";
 
   const worldGroupRef = useRef<THREE.Group>(null);
-  useFrame((_s, delta) => {
+  useFrame((state) => {
     if (!settings.autoRotate || !worldGroupRef.current) return;
-    worldGroupRef.current.rotation.y +=
-      delta * (settings.rotateSpeed / 100) * 0.14;
+    worldGroupRef.current.rotation.y =
+      state.clock.elapsedTime * (settings.rotateSpeed / 100) * 0.14;
   });
 
   const visibleLayers = useMemo(
@@ -861,6 +863,12 @@ export function OntologyScene({
           <group key={`slab-${l}`}>
             <LayerBounds layer={l} />
             <SlabGrid layer={l} />
+            <LayerNameLabel
+              name={LAYER_LABEL[l]}
+              worldPosition={[12.2, LAYER_HEIGHT[l], 0]}
+              fontSize={settings.layerLabelFontSize}
+              scale={settings.layerLabelScale / 100}
+            />
           </group>
         ))}
 

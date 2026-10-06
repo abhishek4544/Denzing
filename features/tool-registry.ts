@@ -32,6 +32,13 @@ export const tools: readonly ToolDefinition[] = [
       "Experimental variant of Mesh Strata 3D for in-progress content types.",
     href: "/tools/mesh-strata-3d-lab",
   },
+  {
+    id: "security-grid-3d",
+    label: "Security Grid 3D",
+    description:
+      "Security-themed visualizer: subdivided cube above a binary data floor, connected by wires.",
+    href: "/tools/security-grid-3d",
+  },
 ];
 
 export const defaultTool = tools[0];

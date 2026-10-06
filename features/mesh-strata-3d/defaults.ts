@@ -400,7 +400,21 @@ export type StrataSettings = {
   bloomThreshold: number;
   bloomSmoothing: number;
   vignette: number;
+
 };
+
+/** Scene-space Y of the top layer. Mirrors the stack layout in `scene.tsx`. */
+export function computeStrataTopY(settings: Pick<StrataSettings, "layerCount" | "layerGaps">): number {
+  const { layerCount, layerGaps } = settings;
+  if (layerCount <= 0) return 0;
+  const gaps = layerGaps.slice(0, Math.max(0, layerCount - 1)).map((g) => g * 0.03);
+  const ys: number[] = [0];
+  for (let i = 1; i < layerCount; i += 1) ys.push(ys[i - 1] - gaps[i - 1]);
+  const top = ys[0] ?? 0;
+  const bottom = ys[layerCount - 1] ?? 0;
+  const shift = -(top + bottom) / 2;
+  return top + shift;
+}
 
 export const defaultStrataSettings: StrataSettings = {
   canvasAspect: "auto",

@@ -29,6 +29,7 @@ import * as THREE from "three";
 import type { ExplorerSettings, LayerId } from "./defaults";
 import { kindLabels } from "./defaults";
 import type { NodeKind, OntologyEdge, OntologyNode } from "./fixture";
+import { LayerNameLabel } from "./layer-name-label";
 
 const ACCENT = "#ff6a1a";
 
@@ -189,27 +190,12 @@ function LayerRings({
                 depthWrite={false}
                 toneMapped={false}
               />
-              <Html
-                center
-                distanceFactor={22}
-                position={[r + 0.5, 0.7, 0]}
-                zIndexRange={[5, 0]}
-                style={{
-                  pointerEvents: "none",
-                  fontFamily:
-                    "var(--font-geist-mono), ui-monospace, monospace",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  letterSpacing: "0.34em",
-                  color: "rgba(255,255,255,0.75)",
-                  textTransform: "uppercase",
-                  whiteSpace: "nowrap",
-                  transform: "translate(-50%, -50%)",
-                  textShadow: "0 0 12px rgba(0,0,0,0.85)",
-                }}
-              >
-                {LAYER_LABEL[l]}
-              </Html>
+              <LayerNameLabel
+                name={LAYER_LABEL[l]}
+                worldPosition={[r + 0.5, 0.7, 0]}
+                fontSize={settings.layerLabelFontSize}
+                scale={settings.layerLabelScale / 100}
+              />
               {/* Four cardinal tick markers per ring — orient the eye */}
               {[[r, 0, 0], [-r, 0, 0], [0, 0, r], [0, 0, -r]].map((pos, j) => (
                 <mesh key={j} position={pos as [number, number, number]}>
@@ -332,9 +318,11 @@ function DerivationEdge({
   }, [from, to]);
 
   const pulseRef = useRef<THREE.Mesh>(null);
-  useFrame(({ clock }) => {
+  useFrame((state) => {
     if (!pulseRef.current || !emphasized || dimmed) return;
-    const t = clock.getElapsedTime();
+    // Read as a property — clock.getElapsedTime() internally calls getDelta(),
+    // which advances the clock by wall-clock time and desyncs export renders.
+    const t = state.clock.elapsedTime;
     // Pulses travel INWARD (source → target = end → start on the "toward center" arc).
     const u = 1 - (((t * 0.22 + offset) % 1 + 1) % 1);
     const p = curve.getPointAt(u);
@@ -398,9 +386,9 @@ function HubNode({
   const groupRef = useRef<THREE.Group>(null);
   const phase = useMemo(() => (hashId(node.id) % 1000) / 1000, [node.id]);
 
-  useFrame(({ clock }) => {
+  useFrame((state) => {
     if (!groupRef.current) return;
-    const t = clock.getElapsedTime();
+    const t = state.clock.elapsedTime;
     groupRef.current.rotation.y = t * 0.05 + phase * Math.PI * 2;
   });
 
@@ -432,37 +420,44 @@ function HubNode({
       ? String(connectionCount).padStart(2, "0")
       : (node.sublabel ?? kindLabels[node.kind]).toUpperCase();
 
+  const showSolid = settings.boxVisible && settings.boxSolid;
+  const showStroke = settings.boxVisible && settings.boxStroke;
+
   return (
     <group ref={groupRef} position={node.position}>
       {/* Physical inner core — clearcoat glass over dark metal so real light
        *  reflects off the surface and edges catch the HDR environment. */}
-      <mesh castShadow receiveShadow>
-        <boxGeometry args={[size * 0.96, size * 0.96, size * 0.96]} />
-        <meshPhysicalMaterial
-          color="#14151f"
-          metalness={0.75}
-          roughness={0.22}
-          clearcoat={1}
-          clearcoatRoughness={0.15}
-          envMapIntensity={1.35}
-          transparent
-          opacity={dimmed ? 0.5 : 1}
-        />
-      </mesh>
-
-      <mesh>
-        <boxGeometry args={[size, size, size]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        <Edges color="#ffffff" lineWidth={1} threshold={15}>
-          <lineBasicMaterial
-            color="#ffffff"
+      {showSolid ? (
+        <mesh castShadow receiveShadow>
+          <boxGeometry args={[size * 0.96, size * 0.96, size * 0.96]} />
+          <meshPhysicalMaterial
+            color="#14151f"
+            metalness={0.75}
+            roughness={0.22}
+            clearcoat={1}
+            clearcoatRoughness={0.15}
+            envMapIntensity={1.35}
             transparent
-            opacity={opacity}
-            depthWrite={false}
-            toneMapped={false}
+            opacity={dimmed ? 0.5 : 1}
           />
-        </Edges>
-      </mesh>
+        </mesh>
+      ) : null}
+
+      {showStroke ? (
+        <mesh>
+          <boxGeometry args={[size, size, size]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          <Edges color="#ffffff" lineWidth={1} threshold={15}>
+            <lineBasicMaterial
+              color="#ffffff"
+              transparent
+              opacity={opacity}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </Edges>
+        </mesh>
+      ) : null}
 
       <mesh>
         <sphereGeometry args={[size * 0.16, 12, 12]} />
@@ -653,10 +648,12 @@ export function BigDataBurstScene({
   const focusActive = settings.focusKind !== "all";
 
   const worldGroupRef = useRef<THREE.Group>(null);
-  useFrame((_s, delta) => {
+  useFrame((state) => {
     if (!settings.autoRotate || !worldGroupRef.current) return;
-    worldGroupRef.current.rotation.y +=
-      delta * (settings.rotateSpeed / 100) * 0.12;
+    // Absolute-time drive so the export loop (frameloop="never") reproduces
+    // the same rotation as the live editor.
+    worldGroupRef.current.rotation.y =
+      state.clock.elapsedTime * (settings.rotateSpeed / 100) * 0.12;
   });
 
   const visibleLayersOrdered = useMemo(

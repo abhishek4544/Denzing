@@ -75,7 +75,46 @@ export const traceModeOptions = [
 
 export type TraceMode = (typeof traceModeOptions)[number]["value"];
 
+export const canvasAspectOptions = [
+  { value: "auto", label: "Auto · Fit stage" },
+  { value: "custom", label: "Custom…" },
+  { value: "16:9", label: "16:9 · Landscape" },
+  { value: "9:16", label: "9:16 · Portrait" },
+  { value: "1:1", label: "1:1 · Square" },
+  { value: "4:3", label: "4:3 · Landscape" },
+  { value: "3:4", label: "3:4 · Portrait" },
+  { value: "4:5", label: "4:5 · Portrait" },
+  { value: "21:9", label: "21:9 · Wide" },
+] as const;
+export type CanvasAspect = (typeof canvasAspectOptions)[number]["value"];
+export function canvasAspectValue(
+  value: CanvasAspect | undefined,
+  customWidth = 16,
+  customHeight = 9,
+): number | undefined {
+  if (value === "custom")
+    return Number.isFinite(customWidth) &&
+      Number.isFinite(customHeight) &&
+      customWidth > 0 &&
+      customHeight > 0
+      ? Math.min(20, Math.max(0.05, customWidth / customHeight))
+      : 16 / 9;
+  if (
+    !value ||
+    value === "auto" ||
+    !canvasAspectOptions.some((option) => option.value === value)
+  )
+    return undefined;
+  const [width, height] = value.split(":").map(Number);
+  return width / height;
+}
+
 export type ExplorerSettings = {
+  /** Export/canvas aspect. */
+  canvasAspect?: CanvasAspect;
+  canvasAspectWidth?: number;
+  canvasAspectHeight?: number;
+
   /** Which canvas the tool is showing. */
   viewMode: ViewMode;
 
@@ -84,6 +123,17 @@ export type ExplorerSettings = {
 
   /** Node styling. */
   nodeSize: number;
+  /** Show the node cube at all (both solid + stroke). */
+  boxVisible: boolean;
+  /** Show the physical inner cube fill. */
+  boxSolid: boolean;
+  /** Show the wireframe cube edges. */
+  boxStroke: boolean;
+
+  /** Layer name pill: text size in px. */
+  layerLabelFontSize: number;
+  /** Layer name pill: on-screen scale multiplier (50..300 → 0.5×..3×). */
+  layerLabelScale: number;
   nodeMetalness: number;
   nodeRoughness: number;
   nodeEmissive: number;
@@ -144,6 +194,9 @@ export type ExplorerSettings = {
 };
 
 export const defaultExplorerSettings: ExplorerSettings = {
+  canvasAspect: "auto",
+  canvasAspectWidth: 16,
+  canvasAspectHeight: 9,
   viewMode: "burst-3d",
 
   layers: {
@@ -156,6 +209,12 @@ export const defaultExplorerSettings: ExplorerSettings = {
   },
 
   nodeSize: 1,
+  boxVisible: true,
+  boxSolid: true,
+  boxStroke: true,
+
+  layerLabelFontSize: 14,
+  layerLabelScale: 100,
   nodeMetalness: 0.75,
   nodeRoughness: 0.18,
   nodeEmissive: 0.55,

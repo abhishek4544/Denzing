@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { SelectField, SliderField } from "@/components/tool-shell";
+import { SelectField, SliderField, ToggleField } from "@/components/tool-shell";
 import type { StrataSettings } from "./defaults";
 import { videoDimensions, videoResolutions, type ExportCamera, type VideoExportOptions } from "./export-options";
 
@@ -16,7 +16,7 @@ export default function ExportDialog({ settings, camera, onClose, onPng }: {
   settings: StrataSettings; camera: ExportCamera; onClose: () => void; onPng: () => void;
 }) {
   const [format, setFormat] = useState<"webm" | "mp4" | "png" | "code">("webm");
-  const [options, setOptions] = useState<VideoExportOptions>({ resolution: "1080p", fps: 30, duration: 10, quality: "high" });
+  const [options, setOptions] = useState<VideoExportOptions>({ resolution: "1080p", fps: 30, duration: 10, quality: "high", loop: false });
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
@@ -82,6 +82,11 @@ export default function ExportDialog({ settings, camera, onClose, onPng }: {
               onChange={(quality) => setOptions((value) => ({...value, quality}))} />
             <SliderField label="Duration (seconds)" value={options.duration} min={1} max={30}
               onChange={(duration) => setOptions((value) => ({...value, duration}))} />
+            <ToggleField size="compact"
+              label="Seamless Loop"
+              checked={options.loop}
+              onCheckedChange={(loop) => setOptions((value) => ({...value, loop}))}
+            />
           </>}
         </fieldset>
         {busy && <div className="mt-4">

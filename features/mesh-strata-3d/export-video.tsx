@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { BufferTarget, CanvasSource, getFirstEncodableVideoCodec, Output, Quality, Mp4OutputFormat, WebMOutputFormat } from "mediabunny";
 import { MeshStrataScene } from "./scene";
 import { loadVioletFont } from "./layer-name-label";
+import { drawCalloutsOnCanvas } from "./callout-draw";
 import type { StrataSettings } from "./defaults";
 import { videoDimensions, videoResolutions, type ExportCamera, type VideoExportOptions } from "./export-options";
 
@@ -36,6 +37,20 @@ export async function exportStrataVideo(settings: StrataSettings, camera: Export
   }
   if (typeof VideoEncoder === "undefined") throw new Error("Video export needs a browser with WebCodecs video encoding. Try the latest Chrome or Edge.");
   const { width, height } = videoDimensions(resolution, settings.canvasAspect, settings.canvasAspectWidth, settings.canvasAspectHeight, camera.viewport);
+  // Seamless-loop mode: quantize the auto-rotate speed so an integer number
+  // of revolutions fits exactly within the capture window. The natural
+  // revolutions in `duration` seconds for a user-facing speed `rotateSpeed`
+  // is rotateSpeed * duration / 1200 (see OrbitControls autoRotate math).
+  // When loop is on we round that to the nearest integer (min 1) and
+  // recompute the OrbitControls autoRotateSpeed to produce exactly N revs.
+  const naturalRevolutions = (settings.rotateSpeed * options.duration) / 1200;
+  const loopRevolutions = Math.max(1, Math.round(naturalRevolutions));
+  // OrbitControls uses the no-delta branch inside drei's wrapper, so
+  // per-frame rotation = (π/1800) × autoRotateSpeed. For N revolutions over
+  // (duration × fps) frames: autoRotateSpeed = 3600 × N / (duration × fps).
+  const autoRotateSpeedForExport = options.loop && settings.autoRotate
+    ? (3600 * loopRevolutions) / (options.duration * options.fps)
+    : (settings.rotateSpeed / 20 * 60) / options.fps;
   const quality = new Quality({ bitrate: Math.round(width * height * options.fps *
     ({ standard: 0.08, high: 0.14, maximum: 0.22 }[options.quality])) });
   const codec = await getFirstEncodableVideoCodec(format === "mp4" ? ["avc"] : ["vp9", "vp8"], { width, height, frameRate: options.fps, quality });
@@ -63,7 +78,7 @@ export async function exportStrataVideo(settings: StrataSettings, camera: Export
         <Suspense fallback={null}>
           <color attach="background" args={[settings.backgroundColor]} />
           <OrbitControls target={camera.target} enableDamping={false} enableRotate={false} enablePan={false} enableZoom={false}
-            autoRotate={settings.autoRotate} autoRotateSpeed={settings.rotateSpeed / 20 * 60 / options.fps} />
+            autoRotate={settings.autoRotate} autoRotateSpeed={autoRotateSpeedForExport} />
           <MeshStrataScene settings={settings} labelReferenceHeight={camera.viewport?.height} />
           <Ready onReady={resolve} />
         </Suspense>
@@ -85,13 +100,26 @@ export async function exportStrataVideo(settings: StrataSettings, camera: Export
     state.advance(0);
     state.advance(0);
     await abortable(state.gl.compileAsync(state.scene, state.camera), signal);
-    source = new CanvasSource(canvas, { codec, quality });
+    // Compositing canvas: receives the WebGL frame plus the HTML callout
+    // overlay drawn each frame so exports include the badges and lines.
+    const composite = document.createElement("canvas");
+    composite.width = width;
+    composite.height = height;
+    const compositeCtx = composite.getContext("2d");
+    if (!compositeCtx) throw new Error("This browser could not create a 2D canvas for the export compositor.");
+    source = new CanvasSource(composite, { codec, quality });
     output.addVideoTrack(source, { frameRate: options.fps });
     await output.start();
-    const frames = Math.round(options.duration * options.fps);
+    // When looping, we omit the final frame so playback wraps from frame
+    // N-1 straight back to frame 0 — which, with the quantized rotation
+    // speed, is visually identical to the frame that would come next.
+    const frames = Math.round(options.duration * options.fps) - (options.loop ? 1 : 0);
     for (let frame = 0; frame < frames; frame++) {
       signal.throwIfAborted();
       state.advance(frame / options.fps);
+      compositeCtx.clearRect(0, 0, width, height);
+      compositeCtx.drawImage(canvas, 0, 0, width, height);
+      drawCalloutsOnCanvas(compositeCtx, width, height, settings, state.camera);
       await source.add(frame / options.fps, 1 / options.fps);
       onProgress((frame + 1) / frames * 0.95);
       // Yield to Cancel/progress UI, even when the encoder has spare capacity.

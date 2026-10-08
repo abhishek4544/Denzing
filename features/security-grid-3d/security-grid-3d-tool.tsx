@@ -1241,6 +1241,20 @@ export function SecurityGrid3DTool() {
             onChange={(v) => update("wireDrift", v)}
           />
           <SliderField
+            label="Floor Spread Radius"
+            value={settings.wireFloorRadius}
+            min={0}
+            max={200}
+            onChange={(v) => update("wireFloorRadius", v)}
+          />
+          <SliderField
+            label="Attach Spread Radius"
+            value={settings.wireAttachRadius}
+            min={0}
+            max={200}
+            onChange={(v) => update("wireAttachRadius", v)}
+          />
+          <SliderField
             label="Top Opacity Fade"
             value={settings.wireTopFade}
             min={0}
@@ -1304,6 +1318,131 @@ export function SecurityGrid3DTool() {
             max={48}
             step={1}
             onChange={(v) => update("wireBendSegments", v)}
+          />
+          <SliderField
+            label="Thickness"
+            value={settings.wireThickness}
+            min={0}
+            max={100}
+            onChange={(v) => update("wireThickness", v)}
+          />
+        </Section>
+
+        <Section title="Top Wires (Cube → Up)">
+          <ToggleField
+            size="compact"
+            label="Enabled"
+            checked={settings.topWiresEnabled}
+            onCheckedChange={(v) => update("topWiresEnabled", v)}
+          />
+          <ColorField
+            label="Color"
+            color={settings.topWireColor}
+            opacity={settings.topWireOpacity}
+            onColorChange={(v) => update("topWireColor", v)}
+            onOpacityChange={(v) => update("topWireOpacity", v)}
+            showPipette={false}
+          />
+          <SliderField
+            label="Count"
+            value={settings.topWireCount}
+            min={10}
+            max={600}
+            step={1}
+            onChange={(v) => update("topWireCount", v)}
+          />
+          <SliderField
+            label="Height"
+            value={settings.topWireHeight}
+            min={0}
+            max={300}
+            onChange={(v) => update("topWireHeight", v)}
+          />
+          <SliderField
+            label="Radius Expand (Drift)"
+            value={settings.topWireDrift}
+            min={0}
+            max={200}
+            onChange={(v) => update("topWireDrift", v)}
+          />
+          <SliderField
+            label="Thickness"
+            value={settings.topWireThickness}
+            min={0}
+            max={100}
+            onChange={(v) => update("topWireThickness", v)}
+          />
+          <SliderField
+            label="Attach Spread Radius"
+            value={settings.topWireAttachRadius}
+            min={0}
+            max={200}
+            onChange={(v) => update("topWireAttachRadius", v)}
+          />
+          <SliderField
+            label="Base Opacity Fade"
+            value={settings.topWireBottomFade}
+            min={0}
+            max={60}
+            onChange={(v) => update("topWireBottomFade", v)}
+          />
+          <SliderField
+            label="Tip Opacity Fade"
+            value={settings.topWireTopFade}
+            min={0}
+            max={60}
+            onChange={(v) => update("topWireTopFade", v)}
+          />
+          <SliderField
+            label="Flow Speed"
+            value={settings.topWireFlowSpeed}
+            min={0}
+            max={200}
+            onChange={(v) => update("topWireFlowSpeed", v)}
+          />
+          <SliderField
+            label="Flow Density"
+            value={settings.topWireFlowDensity}
+            min={0}
+            max={30}
+            step={1}
+            onChange={(v) => update("topWireFlowDensity", v)}
+          />
+          <SliderField
+            label="Flow Duty"
+            value={settings.topWireFlowDuty}
+            min={0}
+            max={100}
+            onChange={(v) => update("topWireFlowDuty", v)}
+          />
+          <SliderField
+            label="Flow Randomness"
+            value={settings.topWireFlowRandomness}
+            min={0}
+            max={100}
+            onChange={(v) => update("topWireFlowRandomness", v)}
+          />
+          <SliderField
+            label="Bend (Sag/Arch)"
+            value={settings.topWireBend}
+            min={-100}
+            max={100}
+            onChange={(v) => update("topWireBend", v)}
+          />
+          <SliderField
+            label="Bend Radial (Bow Out/In)"
+            value={settings.topWireBendRadial}
+            min={-100}
+            max={100}
+            onChange={(v) => update("topWireBendRadial", v)}
+          />
+          <SliderField
+            label="Bend Segments"
+            value={settings.topWireBendSegments}
+            min={1}
+            max={48}
+            step={1}
+            onChange={(v) => update("topWireBendSegments", v)}
           />
         </Section>
 

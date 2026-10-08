@@ -1,11 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, type ComponentRef, type Ref } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentRef, type Ref } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { canvasAspectValue, defaultStrataSettings, type StrataSettings } from "./defaults";
 import { MeshStrataScene } from "./scene";
+import {
+  CalloutAnchorTracker,
+  CalloutOverlay,
+  computeStrataAnchors,
+  createCalloutBridgeRef,
+} from "./callout-overlay";
 import { RendererDiagnostics } from "./renderer-diagnostics";
 
 function Runtime({ settings, active }: { settings: StrataSettings; active: boolean }) {
@@ -61,8 +67,10 @@ export default function MeshStrataViewer({ settings = defaultStrataSettings,
   const position: [number, number, number] = initialCamera?.position ?? (settings.isoView
     ? [distance * 0.72, distance * 0.62, distance * 0.72]
     : [distance * 0.02, distance * 0.09, distance]);
+  const bridgeRef = useMemo(() => createCalloutBridgeRef(), []);
+  const anchorSpecs = useMemo(() => computeStrataAnchors(settings), [settings]);
   return <div ref={host} style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", containerType: "size", pointerEvents: interactive ? "auto" : "none" }}>
-    <div style={{ width: aspect ? `min(100cqw, ${aspect * 100}cqh)` : "100%", height: aspect ? `min(100cqh, ${100 / aspect}cqw)` : "100%", overflow: "hidden", borderRadius: 8 }}>
+    <div style={{ position: "relative", width: aspect ? `min(100cqw, ${aspect * 100}cqh)` : "100%", height: aspect ? `min(100cqh, ${100 / aspect}cqw)` : "100%", overflow: "hidden", borderRadius: 8 }}>
     <Canvas dpr={[1, Math.max(1, maxDpr)]}
       gl={{ antialias: true, powerPreference: "high-performance",
         preserveDrawingBuffer, alpha: false, stencil: false }}
@@ -74,7 +82,9 @@ export default function MeshStrataViewer({ settings = defaultStrataSettings,
         minDistance={10} maxDistance={60} autoRotate={settings.autoRotate}
         autoRotateSpeed={settings.rotateSpeed / 20} makeDefault target={initialCamera?.target ?? [0, 0, 0]} />
       <MeshStrataScene settings={settings} labelReferenceHeight={initialCamera?.viewport?.height} />
+      {settings.showCallouts && <CalloutAnchorTracker bridgeRef={bridgeRef} anchors={anchorSpecs} />}
     </Canvas>
+    {settings.showCallouts && <CalloutOverlay bridgeRef={bridgeRef} settings={settings} />}
     </div>
   </div>;
 }

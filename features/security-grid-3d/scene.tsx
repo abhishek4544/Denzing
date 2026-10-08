@@ -772,8 +772,8 @@ const wireVertexShader = /* glsl */ `
   attribute float tPhase;
   attribute float tSpeedMul;
   attribute float tOpaMul;
-  uniform float uCubeBottomY;  // live bottom face of the lowest slab
-  uniform float uFloorY;       // floor plane Y
+  uniform float uBaseY;        // Y at tAlong = 0 (far end)
+  uniform float uTipY;         // Y at tAlong = 1 (anchor end)
   uniform float uBend;         // vertical bend amount (world units)
   uniform float uBendRadial;   // radial bend amount (world units)
   uniform vec3  uCubeAxis;     // (cubeX, 0, cubeZ)
@@ -787,8 +787,8 @@ const wireVertexShader = /* glsl */ `
     vSpeedMul = tSpeedMul;
     vOpaMul = tOpaMul;
 
-    // Y lerps between the floor and the live bottom slab.
-    float y = mix(uFloorY, uCubeBottomY, tAlong);
+    // Y lerps between base (tAlong=0) and tip (tAlong=1).
+    float y = mix(uBaseY, uTipY, tAlong);
 
     // Bend profile peaks at midpoint (sin(πt) is 0 at ends, 1 at middle).
     float bendCurve = sin(tAlong * 3.14159265359);
@@ -808,7 +808,7 @@ const wireVertexShader = /* glsl */ `
 
     vec3 adjusted = vec3(
       position.x + radialOffset.x,
-      y,
+      y + position.y,
       position.z + radialOffset.y
     );
     gl_Position = projectionMatrix * modelViewMatrix * vec4(adjusted, 1.0);
@@ -870,6 +870,12 @@ function Wires({
   bend,
   bendRadial,
   bendSegments,
+  thickness,
+  floorRadius = 100,
+  attachRadius = 100,
+  direction = "down",
+  farEndY,
+  liveFarEndYRef,
   seed,
 }: {
   active: CellIndex[];
@@ -892,74 +898,237 @@ function Wires({
   bend: number;
   bendRadial: number;
   bendSegments: number;
+  thickness: number;
+  floorRadius?: number;
+  attachRadius?: number;
+  direction?: "down" | "up";
+  farEndY?: number;
+  liveFarEndYRef?: React.MutableRefObject<number>;
   seed: number;
 }) {
-  // Build geometry when structural inputs change. Each wire is tessellated
-  // into `bendSegments` segments so the shader can produce a smooth curve.
+  // Resolve direction-dependent endpoints. For "down" direction, the far end
+  // is the floor (y=0) and the tip is cubeBottomY (live). For "up", the far
+  // end is the top of the cube (we use cubeBottomY ref as the live cube top
+  // anchor from the caller's perspective) and the tip extends above.
+  const isUp = direction === "up";
+  const bakedBaseY = isUp ? cubeBottomY : (farEndY ?? 0);
+  const bakedTipY = isUp
+    ? cubeBottomY + (farEndY ?? 0) // for up: farEndY carries height
+    : cubeBottomY;
+
+  // Build geometry when structural inputs change. Positions store X and Z
+  // for the straight line between endpoints; the shader supplies live Y
+  // (via uBaseY / uTipY) plus bend. When thickness > 0, tube rings get a
+  // small Y offset baked in — that offset is added on top of the shader Y.
   const geom = useMemo(() => {
     const g = new THREE.BufferGeometry();
     if (active.length === 0) return g;
     const rand = seededPrng(Math.floor(seed * 1000) + 833);
     const segs = Math.max(1, Math.round(bendSegments));
-    const vertsPerWire = 2 * segs; // LineSegments renders pairs
     const total = Math.max(active.length, Math.round(count));
-    const positions = new Float32Array(total * vertsPerWire * 3);
-    const tAlong = new Float32Array(total * vertsPerWire);
-    const tPhase = new Float32Array(total * vertsPerWire);
-    const tSpeedMul = new Float32Array(total * vertsPerWire);
-    const tOpaMul = new Float32Array(total * vertsPerWire);
     const d = drift / 100;
     const half = cubeSize / 2;
     const n = Math.max(1, Math.round(subdivisions));
     const step = cubeSize / n;
     const rnd = Math.max(0, Math.min(1, flowRandomness / 100));
+    const useTubes = thickness > 0.01;
+    const radius = useTubes
+      ? Math.max(0.001, (thickness / 100) * cubeSize * 0.08)
+      : 0;
+    const radialSegs = useTubes ? 6 : 0;
+
+    const attachScale = attachRadius / 100;
+    if (!useTubes) {
+      // ---- Thin lines (LineSegments) ----
+      const vertsPerWire = 2 * segs;
+      const positions = new Float32Array(total * vertsPerWire * 3);
+      const tAlong = new Float32Array(total * vertsPerWire);
+      const tPhase = new Float32Array(total * vertsPerWire);
+      const tSpeedMul = new Float32Array(total * vertsPerWire);
+      const tOpaMul = new Float32Array(total * vertsPerWire);
+      for (let i = 0; i < total; i += 1) {
+        const hit = active[i % active.length];
+        const relX = hit.cx - cubeX;
+        const relZ = hit.cz - cubeZ;
+        const nx = Math.round((relX + half) / step);
+        const nz = Math.round((relZ + half) / step);
+        const bxRaw = cubeX + (-half + Math.max(0, Math.min(n, nx)) * step);
+        const bzRaw = cubeZ + (-half + Math.max(0, Math.min(n, nz)) * step);
+        // Attach radius scales the cube-end attachment outward from the
+        // cube axis. 0 collapses every wire to the cube center; 100 keeps
+        // the snapped grid position; >100 pushes past the cube edge.
+        const bx = cubeX + (bxRaw - cubeX) * attachScale;
+        const bz = cubeZ + (bzRaw - cubeZ) * attachScale;
+        const dx = bx + (rand() - 0.5) * cubeSize * d;
+        const dz = bz + (rand() - 0.5) * cubeSize * d;
+
+        const phase = rand();
+        const speedMul = 1 + (rand() * 2 - 1) * rnd;
+        const opaMul = 1 - rand() * rnd * 0.6;
+
+        // Pull floor endpoints toward or away from the cube axis so the
+        // user can keep the fan inside the cube footprint without moving
+        // the active tiles themselves.
+        const floorScale = floorRadius / 100;
+        const scaledHitX = cubeX + (hit.cx - cubeX) * floorScale;
+        const scaledHitZ = cubeZ + (hit.cz - cubeZ) * floorScale;
+
+        // For "down" wires, base (t=0) sits at the floor cell, tip (t=1)
+        // at the snapped+drifted cube attachment. For "up" wires, base
+        // (t=0) sits at the snapped grid point on the cube top, tip (t=1)
+        // extends outward in XZ as the drift radius grows.
+        const sx = isUp ? bx : scaledHitX;
+        const sz = isUp ? bz : scaledHitZ;
+        const ex = dx;
+        const ez = dz;
+
+        for (let s = 0; s < segs; s += 1) {
+          const t0 = s / segs;
+          const t1 = (s + 1) / segs;
+          const vOff = (i * vertsPerWire + s * 2) * 3;
+          positions[vOff + 0] = sx + (ex - sx) * t0;
+          positions[vOff + 1] = 0; // Y supplied by shader
+          positions[vOff + 2] = sz + (ez - sz) * t0;
+          positions[vOff + 3] = sx + (ex - sx) * t1;
+          positions[vOff + 4] = 0;
+          positions[vOff + 5] = sz + (ez - sz) * t1;
+
+          const attrIdx = i * vertsPerWire + s * 2;
+          tAlong[attrIdx + 0] = t0;
+          tAlong[attrIdx + 1] = t1;
+          tPhase[attrIdx + 0] = phase;
+          tPhase[attrIdx + 1] = phase;
+          tSpeedMul[attrIdx + 0] = speedMul;
+          tSpeedMul[attrIdx + 1] = speedMul;
+          tOpaMul[attrIdx + 0] = opaMul;
+          tOpaMul[attrIdx + 1] = opaMul;
+        }
+      }
+      g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      g.setAttribute("tAlong", new THREE.BufferAttribute(tAlong, 1));
+      g.setAttribute("tPhase", new THREE.BufferAttribute(tPhase, 1));
+      g.setAttribute("tSpeedMul", new THREE.BufferAttribute(tSpeedMul, 1));
+      g.setAttribute("tOpaMul", new THREE.BufferAttribute(tOpaMul, 1));
+      return g;
+    }
+
+    // ---- Thick tubes ----
+    const positions: number[] = [];
+    const indices: number[] = [];
+    const tAlongArr: number[] = [];
+    const tPhaseArr: number[] = [];
+    const tSpeedArr: number[] = [];
+    const tOpaArr: number[] = [];
+    const perRing = radialSegs + 1;
+    let baseVertex = 0;
+
     for (let i = 0; i < total; i += 1) {
       const hit = active[i % active.length];
-      // Snap into cube-local coords (cube may be offset in XZ).
       const relX = hit.cx - cubeX;
       const relZ = hit.cz - cubeZ;
       const nx = Math.round((relX + half) / step);
       const nz = Math.round((relZ + half) / step);
-      const bx = cubeX + (-half + Math.max(0, Math.min(n, nx)) * step);
-      const bz = cubeZ + (-half + Math.max(0, Math.min(n, nz)) * step);
+      const bxRaw = cubeX + (-half + Math.max(0, Math.min(n, nx)) * step);
+      const bzRaw = cubeZ + (-half + Math.max(0, Math.min(n, nz)) * step);
+      const bx = cubeX + (bxRaw - cubeX) * attachScale;
+      const bz = cubeZ + (bzRaw - cubeZ) * attachScale;
       const dx = bx + (rand() - 0.5) * cubeSize * d;
       const dz = bz + (rand() - 0.5) * cubeSize * d;
 
-      // Per-wire random flow attributes.
       const phase = rand();
       const speedMul = 1 + (rand() * 2 - 1) * rnd;
       const opaMul = 1 - rand() * rnd * 0.6;
 
-      // Tessellate: emit `segs` pairs of adjacent vertices along the wire.
-      for (let s = 0; s < segs; s += 1) {
-        const t0 = s / segs;
-        const t1 = (s + 1) / segs;
-        const vOff = (i * vertsPerWire + s * 2) * 3;
-        positions[vOff + 0] = hit.cx + (dx - hit.cx) * t0;
-        positions[vOff + 1] = cubeBottomY * t0;
-        positions[vOff + 2] = hit.cz + (dz - hit.cz) * t0;
-        positions[vOff + 3] = hit.cx + (dx - hit.cx) * t1;
-        positions[vOff + 4] = cubeBottomY * t1;
-        positions[vOff + 5] = hit.cz + (dz - hit.cz) * t1;
+      // Base/tip XZ follow the same convention as the line path above:
+      // down wires start at the floor cell (scaled toward the cube axis
+      // by floorRadius); up wires start at the snapped cube-grid point
+      // on the top face and spread outward.
+      const floorScaleT = floorRadius / 100;
+      const scaledHitXT = cubeX + (hit.cx - cubeX) * floorScaleT;
+      const scaledHitZT = cubeZ + (hit.cz - cubeZ) * floorScaleT;
+      const sx = isUp ? bx : scaledHitXT;
+      const sz = isUp ? bz : scaledHitZT;
+      // Build a straight-line curve using the BAKED anchor Ys so
+      // TubeGeometry computes tangent-aligned ring frames correctly.
+      // Final Y is re-applied in the shader (minus the baked curve Y)
+      // so the tube can still track the live anchor.
+      const curve = new THREE.LineCurve3(
+        new THREE.Vector3(sx, bakedBaseY, sz),
+        new THREE.Vector3(dx, bakedTipY, dz),
+      );
 
-        const attrIdx = i * vertsPerWire + s * 2;
-        tAlong[attrIdx + 0] = t0;
-        tAlong[attrIdx + 1] = t1;
-        tPhase[attrIdx + 0] = phase;
-        tPhase[attrIdx + 1] = phase;
-        tSpeedMul[attrIdx + 0] = speedMul;
-        tSpeedMul[attrIdx + 1] = speedMul;
-        tOpaMul[attrIdx + 0] = opaMul;
-        tOpaMul[attrIdx + 1] = opaMul;
+      const tube = new THREE.TubeGeometry(
+        curve,
+        segs,
+        radius,
+        radialSegs,
+        false,
+      );
+      const posArr = tube.attributes.position.array as ArrayLike<number>;
+      const idxArr = tube.index!.array as ArrayLike<number>;
+      const vCount = posArr.length / 3;
+
+      for (let v = 0; v < vCount; v += 1) {
+        const ring = Math.floor(v / perRing);
+        const t = ring / segs;
+        const curveY = bakedBaseY + (bakedTipY - bakedBaseY) * t;
+        positions.push(posArr[v * 3 + 0]);
+        // Store only the ring's local Y offset relative to the curve
+        // centerline; shader adds live mix(uBaseY, uTipY, t) on top.
+        positions.push(posArr[v * 3 + 1] - curveY);
+        positions.push(posArr[v * 3 + 2]);
+        tAlongArr.push(t);
+        tPhaseArr.push(phase);
+        tSpeedArr.push(speedMul);
+        tOpaArr.push(opaMul);
       }
+      for (let k = 0; k < idxArr.length; k += 1) {
+        indices.push(idxArr[k] + baseVertex);
+      }
+      baseVertex += vCount;
+      tube.dispose();
     }
-    g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    g.setAttribute("tAlong", new THREE.BufferAttribute(tAlong, 1));
-    g.setAttribute("tPhase", new THREE.BufferAttribute(tPhase, 1));
-    g.setAttribute("tSpeedMul", new THREE.BufferAttribute(tSpeedMul, 1));
-    g.setAttribute("tOpaMul", new THREE.BufferAttribute(tOpaMul, 1));
+
+    g.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(positions, 3),
+    );
+    g.setAttribute(
+      "tAlong",
+      new THREE.Float32BufferAttribute(tAlongArr, 1),
+    );
+    g.setAttribute(
+      "tPhase",
+      new THREE.Float32BufferAttribute(tPhaseArr, 1),
+    );
+    g.setAttribute(
+      "tSpeedMul",
+      new THREE.Float32BufferAttribute(tSpeedArr, 1),
+    );
+    g.setAttribute(
+      "tOpaMul",
+      new THREE.Float32BufferAttribute(tOpaArr, 1),
+    );
+    g.setIndex(indices);
     return g;
-  }, [active, cubeSize, subdivisions, cubeBottomY, cubeX, cubeZ, count, drift, seed, flowRandomness, bendSegments]);
+  }, [
+    active,
+    cubeSize,
+    subdivisions,
+    bakedBaseY,
+    bakedTipY,
+    cubeX,
+    cubeZ,
+    count,
+    drift,
+    seed,
+    flowRandomness,
+    bendSegments,
+    thickness,
+    floorRadius,
+    attachRadius,
+    isUp,
+  ]);
 
   // Stable material instance — created once, uniforms updated via effect / frame.
   const material = useMemo(
@@ -976,14 +1145,15 @@ function Wires({
           uSpeed: { value: 0 },
           uDensity: { value: 6 },
           uDuty: { value: 0.35 },
-          uCubeBottomY: { value: cubeBottomY },
-          uFloorY: { value: 0 },
+          uBaseY: { value: 0 },
+          uTipY: { value: cubeBottomY },
           uBend: { value: 0 },
           uBendRadial: { value: 0 },
           uCubeAxis: { value: new THREE.Vector3(cubeX, 0, cubeZ) },
         },
         transparent: true,
         depthWrite: false,
+        side: THREE.DoubleSide,
         blending: THREE.AdditiveBlending,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1023,12 +1193,33 @@ function Wires({
     // Use absolute renderer time so export loops can return to time zero
     // without carrying an accumulated delta into the final frame.
     material.uniforms.uTime.value = clock.getElapsedTime() % 1000;
-    // Track the live bottom-slab Y so wires follow the explode animation.
-    material.uniforms.uCubeBottomY.value = liveBottomYRef.current;
+    // Track live cube face Y so wires follow the explode animation.
+    const liveAnchor = liveBottomYRef.current;
+    if (isUp) {
+      // For up wires, liveBottomYRef is the live cube TOP Y; farEndY is
+      // the upward length. Base sits at cube top; tip sits at top + length.
+      material.uniforms.uBaseY.value = liveAnchor;
+      material.uniforms.uTipY.value = liveAnchor + (farEndY ?? 0);
+    } else {
+      // For down wires, uBaseY is floor (0 or liveFarEndYRef), uTipY is
+      // the live cube bottom.
+      material.uniforms.uBaseY.value = liveFarEndYRef
+        ? liveFarEndYRef.current
+        : (farEndY ?? 0);
+      material.uniforms.uTipY.value = liveAnchor;
+    }
   });
 
   if (active.length === 0) return null;
 
+  const useTubes = thickness > 0.01;
+  if (useTubes) {
+    return (
+      <mesh geometry={geom}>
+        <primitive object={material} attach="material" />
+      </mesh>
+    );
+  }
   return (
     <lineSegments geometry={geom}>
       <primitive object={material} attach="material" />
@@ -1440,6 +1631,7 @@ function SlabCube({
   floatAmp,
   floatPeriod,
   liveBottomYRef,
+  liveTopYRef,
   slabWorldYsRef,
   cubeOriginY,
 }: {
@@ -1480,6 +1672,7 @@ function SlabCube({
   floatAmp: number;
   floatPeriod: number;
   liveBottomYRef: React.MutableRefObject<number>;
+  liveTopYRef: React.MutableRefObject<number>;
   slabWorldYsRef: React.MutableRefObject<number[]>;
   cubeOriginY: number;
 }) {
@@ -1577,6 +1770,13 @@ function SlabCube({
     if (bottomSlab) {
       liveBottomYRef.current =
         cubeOriginY + bottomSlab.position.y - slabBaseInfo[0].h / 2;
+    }
+    // Expose the world-space Y of the top slab's top face so top wires
+    // can anchor there (parallel to the bottom-face tracking above).
+    const topSlab = slabRefs.current[N - 1];
+    if (topSlab) {
+      liveTopYRef.current =
+        cubeOriginY + topSlab.position.y + slabBaseInfo[N - 1].h / 2;
     }
   });
 
@@ -1848,6 +2048,9 @@ export function SecurityGridScene({ settings, labelReferenceHeight }: {
   // Live world-space Y of the bottom slab's bottom face. SlabCube writes to
   // this each frame; Wires reads it to anchor its top endpoints.
   const liveBottomYRef = useRef(cubeBottomY);
+  // Live world-space Y of the top slab's top face. SlabCube writes it; the
+  // Top Wires component anchors its base there.
+  const liveTopYRef = useRef(cubeY + settings.cubeSize / 2);
   // Live world-space Y of every slab center. Written by SlabCube, read by
   // the mesh-strata-style projected label anchoring.
   const slabWorldYsRef = useRef<number[]>(
@@ -2062,6 +2265,7 @@ export function SecurityGridScene({ settings, labelReferenceHeight }: {
               floatAmp={settings.cubeFloatAmp}
               floatPeriod={settings.cubeFloatPeriod}
               liveBottomYRef={liveBottomYRef}
+              liveTopYRef={liveTopYRef}
               slabWorldYsRef={slabWorldYsRef}
               cubeOriginY={cubeY}
             />
@@ -2114,7 +2318,46 @@ export function SecurityGridScene({ settings, labelReferenceHeight }: {
           bend={settings.wireBend}
           bendRadial={settings.wireBendRadial}
           bendSegments={settings.wireBendSegments}
+          thickness={settings.wireThickness}
+          floorRadius={settings.wireFloorRadius}
+          attachRadius={settings.wireAttachRadius}
+          direction="down"
+          farEndY={0}
           seed={settings.activeSeed}
+        />
+      )}
+
+      {settings.cubeEnabled && settings.topWiresEnabled && (
+        <Wires
+          active={active}
+          cubeSize={settings.cubeSize}
+          subdivisions={settings.cubeSubdivisions}
+          // For "up" direction, cubeBottomY carries the live cube TOP Y
+          // baseline (initial static value — the live ref drives per-frame).
+          cubeBottomY={cubeY + settings.cubeSize / 2}
+          cubeX={cubeX}
+          cubeZ={cubeZ}
+          // Reuse liveBottomYRef slot for the live anchor: pass the top ref.
+          liveBottomYRef={liveTopYRef}
+          color={settings.topWireColor}
+          opacity={settings.topWireOpacity}
+          count={settings.topWireCount}
+          drift={settings.topWireDrift}
+          topFade={settings.topWireTopFade}
+          bottomFade={settings.topWireBottomFade}
+          flowSpeed={settings.topWireFlowSpeed}
+          flowDensity={settings.topWireFlowDensity}
+          flowDuty={settings.topWireFlowDuty}
+          flowRandomness={settings.topWireFlowRandomness}
+          bend={settings.topWireBend}
+          bendRadial={settings.topWireBendRadial}
+          bendSegments={settings.topWireBendSegments}
+          thickness={settings.topWireThickness}
+          attachRadius={settings.topWireAttachRadius}
+          direction="up"
+          // Up wires encode upward LENGTH in farEndY.
+          farEndY={settings.topWireHeight * 0.1}
+          seed={settings.activeSeed + 101}
         />
       )}
 

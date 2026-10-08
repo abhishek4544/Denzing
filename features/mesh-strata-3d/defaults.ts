@@ -401,6 +401,30 @@ export type StrataSettings = {
   bloomSmoothing: number;
   vignette: number;
 
+  /** Master toggle for the three overlay callouts (badges + connectors). */
+  showCallouts: boolean;
+
+  /** Callout badge screen positions (% of canvas, measured from top-left). */
+  calloutAiLeft: number;
+  calloutAiTop: number;
+  calloutAutonomousLeft: number;
+  calloutAutonomousTop: number;
+  calloutYourOwnAiLeft: number;
+  calloutYourOwnAiTop: number;
+
+  /** AI Analytics connector: steps horizontally from the badge to a trunk X,
+   * drops vertically to a target Y, then bends into the Systems layer edge.
+   * `trunkX` is the % X where the vertical column sits (0 = canvas left). */
+  calloutAiTrunkX: number;
+  calloutAiLineDown: number;
+  calloutAiBendRight: number;
+  /** Autonomous Agents connector — short vertical drop to the top layer. */
+  calloutAutonomousLineDown: number;
+  /** Your Own AI connector: steps horizontally from the badge to a trunk X,
+   * drops vertically, then bends LEFT into the Agent Runtime right edge. */
+  calloutYourOwnAiTrunkX: number;
+  calloutYourOwnAiLineDown: number;
+  calloutYourOwnAiBendLeft: number;
 };
 
 /** Scene-space Y of the top layer. Mirrors the stack layout in `scene.tsx`. */
@@ -609,4 +633,21 @@ export const defaultStrataSettings: StrataSettings = {
   bloomThreshold: 10,
   bloomSmoothing: 24,
   vignette: 0,
+
+  showCallouts: true,
+
+  calloutAiLeft: 20.3,
+  calloutAiTop: 15.0,
+  calloutAutonomousLeft: 43.3,
+  calloutAutonomousTop: 11.0,
+  calloutYourOwnAiLeft: 77.3,
+  calloutYourOwnAiTop: 11.5,
+
+  calloutAiTrunkX: 1,
+  calloutAiLineDown: 85,
+  calloutAiBendRight: 0,
+  calloutAutonomousLineDown: 10,
+  calloutYourOwnAiTrunkX: 99,
+  calloutYourOwnAiLineDown: 22,
+  calloutYourOwnAiBendLeft: 0,
 };

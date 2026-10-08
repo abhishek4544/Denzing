@@ -215,8 +215,10 @@ export function MeshStrata3DTool() {
     const host = canvasHostRef.current;
     if (!host) return;
     const gl = host.querySelector("canvas");
-    if (gl instanceof HTMLCanvasElement) exportStrataScene(gl);
-  }, []);
+    if (!(gl instanceof HTMLCanvasElement)) return;
+    const camera = orbitControlsRef.current?.object;
+    exportStrataScene(gl, settings, camera);
+  }, [settings]);
 
   // Pulled-back framing leaves breathing room around the full stack.
   return (
@@ -493,6 +495,127 @@ export function MeshStrata3DTool() {
             max={80}
             step={1}
             onChange={(v) => update("segments", v)}
+          />
+        </Section>
+
+        <Section title="Callouts">
+          <ToggleField size="compact"
+            label="Show Callouts"
+            checked={settings.showCallouts}
+            onCheckedChange={(v) => update("showCallouts", v)}
+          />
+        </Section>
+
+        <Section title="AI Analytics Callout">
+          <SliderField
+            label="Badge Left"
+            value={settings.calloutAiLeft}
+            min={0}
+            max={100}
+            step={0.1}
+            onChange={(v) => update("calloutAiLeft", v)}
+          />
+          <SliderField
+            label="Badge Top"
+            value={settings.calloutAiTop}
+            min={0}
+            max={100}
+            step={0.1}
+            onChange={(v) => update("calloutAiTop", v)}
+          />
+          <SliderField
+            label="Line Trunk X"
+            value={settings.calloutAiTrunkX}
+            min={0}
+            max={100}
+            step={0.1}
+            onChange={(v) => update("calloutAiTrunkX", v)}
+          />
+          <SliderField
+            label="Line Drop"
+            value={settings.calloutAiLineDown}
+            min={-60}
+            max={100}
+            step={0.5}
+            onChange={(v) => update("calloutAiLineDown", v)}
+          />
+          <SliderField
+            label="Edge Padding"
+            value={settings.calloutAiBendRight}
+            min={-20}
+            max={30}
+            step={0.5}
+            onChange={(v) => update("calloutAiBendRight", v)}
+          />
+        </Section>
+
+        <Section title="Autonomous Agents Callout">
+          <SliderField
+            label="Badge Left"
+            value={settings.calloutAutonomousLeft}
+            min={0}
+            max={100}
+            step={0.1}
+            onChange={(v) => update("calloutAutonomousLeft", v)}
+          />
+          <SliderField
+            label="Badge Top"
+            value={settings.calloutAutonomousTop}
+            min={0}
+            max={100}
+            step={0.1}
+            onChange={(v) => update("calloutAutonomousTop", v)}
+          />
+          <SliderField
+            label="Line Drop"
+            value={settings.calloutAutonomousLineDown}
+            min={-60}
+            max={60}
+            step={0.5}
+            onChange={(v) => update("calloutAutonomousLineDown", v)}
+          />
+        </Section>
+
+        <Section title="Your Own AI Callout">
+          <SliderField
+            label="Badge Left"
+            value={settings.calloutYourOwnAiLeft}
+            min={0}
+            max={100}
+            step={0.1}
+            onChange={(v) => update("calloutYourOwnAiLeft", v)}
+          />
+          <SliderField
+            label="Badge Top"
+            value={settings.calloutYourOwnAiTop}
+            min={0}
+            max={100}
+            step={0.1}
+            onChange={(v) => update("calloutYourOwnAiTop", v)}
+          />
+          <SliderField
+            label="Line Trunk X"
+            value={settings.calloutYourOwnAiTrunkX}
+            min={0}
+            max={100}
+            step={0.1}
+            onChange={(v) => update("calloutYourOwnAiTrunkX", v)}
+          />
+          <SliderField
+            label="Line Drop"
+            value={settings.calloutYourOwnAiLineDown}
+            min={-60}
+            max={60}
+            step={0.5}
+            onChange={(v) => update("calloutYourOwnAiLineDown", v)}
+          />
+          <SliderField
+            label="Edge Padding"
+            value={settings.calloutYourOwnAiBendLeft}
+            min={-20}
+            max={30}
+            step={0.5}
+            onChange={(v) => update("calloutYourOwnAiBendLeft", v)}
           />
         </Section>
 

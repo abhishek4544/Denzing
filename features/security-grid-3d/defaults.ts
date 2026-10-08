@@ -188,6 +188,34 @@ export type SecurityGridSettings = {
   wireBend: number;         // -100..100 — vertical bend; negative = sag, positive = arch
   wireBendRadial: number;   // -100..100 — radial bend outward (+) / inward (-) from cube axis
   wireBendSegments: number; // 1..48 — curve resolution per wire
+  wireThickness: number;    // 0..100 — 0 = thin GL line, >0 = tube radius
+  wireFloorRadius: number;  // 0..200 — scales floor-end XZ distance from cube axis
+                            // (0 = vertical column at axis; 100 = active-cell position;
+                            //  200 = double spread)
+  wireAttachRadius: number; // 0..200 — scales the cube-end attachment outward
+                            // from the cube axis (0 = all wires meet at the
+                            // cube center; 100 = snapped cube-grid position;
+                            //  200 = 2× past the cube edge)
+
+  // Top wires — grouped controls for strands emanating UP from the cube top
+  topWiresEnabled: boolean;
+  topWireColor: string;
+  topWireOpacity: number;
+  topWireCount: number;
+  topWireDrift: number;       // radius expanding at the upper tip
+  topWireHeight: number;      // 0..300 — world units of upward length
+  topWireTopFade: number;     // fade at upper tip (t=1)
+  topWireBottomFade: number;  // fade near cube face (t=0)
+  topWireFlowSpeed: number;
+  topWireFlowDensity: number;
+  topWireFlowDuty: number;
+  topWireFlowRandomness: number;
+  topWireBend: number;        // -100..100 — vertical bend
+  topWireBendRadial: number;  // -100..100 — radial bend
+  topWireBendSegments: number;
+  topWireThickness: number;   // 0..100 — 0 = thin GL line, >0 = tube radius
+  topWireAttachRadius: number; // 0..200 — scales the cube-top attachment
+                               // (base end) outward from the cube axis.
 };
 
 export const defaultSecurityGridSettings: SecurityGridSettings = {
@@ -368,4 +396,25 @@ export const defaultSecurityGridSettings: SecurityGridSettings = {
   wireBend: 0,
   wireBendRadial: 0,
   wireBendSegments: 20,
+  wireThickness: 0,
+  wireFloorRadius: 100,
+  wireAttachRadius: 100,
+
+  topWiresEnabled: false,
+  topWireColor: "#ffffff",
+  topWireOpacity: 55,
+  topWireCount: 44,
+  topWireDrift: 13,
+  topWireHeight: 60,
+  topWireTopFade: 53,
+  topWireBottomFade: 3,
+  topWireFlowSpeed: 200,
+  topWireFlowDensity: 22,
+  topWireFlowDuty: 27,
+  topWireFlowRandomness: 65,
+  topWireBend: 0,
+  topWireBendRadial: 0,
+  topWireBendSegments: 20,
+  topWireThickness: 0,
+  topWireAttachRadius: 100,
 };

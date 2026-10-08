@@ -20,5 +20,9 @@ export type VideoExportOptions = {
   fps: 24 | 30 | 60;
   duration: number;
   quality: "standard" | "high" | "maximum";
+  /** When true, the auto-rotation speed is quantized so the capture ends on
+   * the same rotation angle it started with, and the final frame is dropped
+   * so looping the clip back to frame 0 is seamless. */
+  loop: boolean;
 };
 export type ExportCamera = { position: [number, number, number]; target: [number, number, number]; viewport?: { width: number; height: number } };

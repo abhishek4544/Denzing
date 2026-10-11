@@ -7,6 +7,7 @@ import { Text } from "@react-three/drei";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import type { SecurityGridSettings } from "./defaults";
+import { TranslucentSheet } from "./translucent-sheet";
 
 function seededPrng(seed: number) {
   let s = (seed | 0) || 1;
@@ -1604,6 +1605,7 @@ const SlabMesh = React.forwardRef<THREE.Mesh, SlabMeshProps>(function SlabMesh(
 function SlabCube({
   size,
   subdivisions,
+  sheets,
   slabColor,
   metalness,
   roughness,
@@ -1637,6 +1639,7 @@ function SlabCube({
 }: {
   size: number;
   subdivisions: number;
+  sheets?: { color: string; opacity: number; grain: number; spacing: number };
   slabColor: string;
   metalness: number;
   roughness: number;
@@ -1677,6 +1680,7 @@ function SlabCube({
   cubeOriginY: number;
 }) {
   const N = Math.max(1, Math.round(subdivisions));
+  const isSheetStyle = Boolean(sheets);
 
   // Compute each slab's natural (closed) center-Y from its own height.
   // Each slab band is `size / N`. Within its band the slab occupies
@@ -1685,8 +1689,10 @@ function SlabCube({
   const gapScale = 1 - Math.max(0, Math.min(0.9, slabGapPct / 100));
   const slabBaseInfo = Array.from({ length: N }).map((_, i) => {
     const heightMul = (slabHeights[i] ?? 100) / 100;
-    const h = bandH * (slabHeightPct / 100) * heightMul * gapScale;
-    const baseY = -size / 2 + (i + 0.5) * bandH;
+    const h = sheets ? 0 : bandH * (slabHeightPct / 100) * heightMul * gapScale;
+    const baseY = sheets
+      ? (i - (N - 1) / 2) * size * sheets.spacing / 100
+      : -size / 2 + (i + 0.5) * bandH;
     return { h, baseY };
   });
   const slabSpacing = bandH;
@@ -1783,6 +1789,7 @@ function SlabCube({
   // Load per-slab textures from data URLs. useMemo so textures only reload
   // when a slot's URL actually changes.
   const slabTexs = useMemo(() => {
+    if (isSheetStyle) return [];
     const loader = new THREE.TextureLoader();
     return Array.from({ length: N }).map((_, i) => {
       const url = slabTextures[i] ?? "";
@@ -1794,7 +1801,7 @@ function SlabCube({
       tex.wrapT = THREE.ClampToEdgeWrapping;
       return tex;
     });
-  }, [N, slabTextures]);
+  }, [N, slabTextures, isSheetStyle]);
 
   useEffect(() => {
     return () => {
@@ -1841,6 +1848,19 @@ function SlabCube({
     <group>
       {Array.from({ length: N }).map((_, i) => {
         const isTop = i === N - 1;
+        if (sheets) {
+          return (
+            <TranslucentSheet
+              key={`sheet-${i}`}
+              ref={(mesh) => { slabRefs.current[i] = mesh; }}
+              size={size}
+              color={sheets.color}
+              opacity={(sheets.opacity / 100) * (0.5 + 0.5 * i / Math.max(1, N - 1))}
+              grain={sheets.grain / 100}
+              index={i}
+            />
+          );
+        }
         const isBottom = i === 0;
         const horiz = isTop || isBottom ? size * 1.02 : size;
         const perColor = slabColors[i] ?? slabColor;
@@ -1874,7 +1894,7 @@ function SlabCube({
         );
       })}
 
-      {coreEnabled && (
+      {coreEnabled && !sheets && (
         <mesh ref={coreMeshRef}>
           <boxGeometry
             args={[
@@ -2230,6 +2250,12 @@ export function SecurityGridScene({ settings, labelReferenceHeight }: {
             <SlabCube
               size={settings.cubeSize}
               subdivisions={settings.cubeSubdivisions}
+              sheets={settings.cubeLayerStyle === "sheets" ? {
+                color: settings.cubeSheetColor,
+                opacity: settings.cubeSheetOpacity,
+                grain: settings.cubeSheetGrain,
+                spacing: settings.cubeSheetSpacing,
+              } : undefined}
               slabColor={settings.cubeSlabColor}
               metalness={settings.cubeSlabMetalness}
               roughness={settings.cubeSlabRoughness}

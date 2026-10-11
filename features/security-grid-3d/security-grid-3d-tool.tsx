@@ -698,7 +698,7 @@ export function SecurityGrid3DTool() {
             onChange={(v) => update("cubeSize", v)}
           />
           <SliderField
-            label="Subdivisions"
+            label={settings.cubeLayerStyle === "sheets" ? "Layer Count" : "Subdivisions"}
             value={settings.cubeSubdivisions}
             min={1}
             max={8}
@@ -767,6 +767,41 @@ export function SecurityGrid3DTool() {
         </Section>
 
         <Section title="Slab Cube (Hyper-real)">
+          <SelectField
+            label="Layer Style"
+            value={settings.cubeLayerStyle}
+            options={[
+              { value: "sheets", label: "Translucent sheets" },
+              { value: "slabs", label: "Solid slabs" },
+            ]}
+            onChange={(value) => update("cubeLayerStyle", value as SecurityGridSettings["cubeLayerStyle"])}
+          />
+          {settings.cubeLayerStyle === "sheets" && (
+            <>
+              <ColorField
+                label="Sheet Color"
+                color={settings.cubeSheetColor}
+                opacity={settings.cubeSheetOpacity}
+                onColorChange={(value) => update("cubeSheetColor", value)}
+                onOpacityChange={(value) => update("cubeSheetOpacity", value)}
+                showPipette={false}
+              />
+              <SliderField
+                label="Sheet Spacing"
+                value={settings.cubeSheetSpacing}
+                min={2}
+                max={60}
+                onChange={(value) => update("cubeSheetSpacing", value)}
+              />
+              <SliderField
+                label="Sheet Grain"
+                value={settings.cubeSheetGrain}
+                min={0}
+                max={100}
+                onChange={(value) => update("cubeSheetGrain", value)}
+              />
+            </>
+          )}
           <ToggleField
             size="compact"
             label="Enabled"
@@ -781,6 +816,7 @@ export function SecurityGrid3DTool() {
               update("cubeHideWireframeWhenSlabs", v)
             }
           />
+          {settings.cubeLayerStyle !== "sheets" && <>
           <SliderField
             label="Metalness"
             value={settings.cubeSlabMetalness}
@@ -966,6 +1002,7 @@ export function SecurityGrid3DTool() {
             max={100}
             onChange={(v) => update("cubeCoreSizePct", v)}
           />
+          </>}
         </Section>
 
         <Section title="Slab Labels">

@@ -3,7 +3,6 @@
 import { Suspense, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { Canvas, useThree, type RootState } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { BufferTarget, CanvasSource, getFirstEncodableVideoCodec, Output, Quality, Mp4OutputFormat, WebMOutputFormat } from "mediabunny";
 import { MeshStrataScene } from "./scene";
@@ -11,6 +10,7 @@ import { loadVioletFont } from "./layer-name-label";
 import { drawCalloutsOnCanvas } from "./callout-draw";
 import type { StrataSettings } from "./defaults";
 import { videoDimensions, videoResolutions, type ExportCamera, type VideoExportOptions } from "./export-options";
+import { getVideoTiming } from "./export-timing";
 
 function Ready({ onReady }: { onReady: (state: RootState) => void }) {
   const get = useThree((state) => state.get);
@@ -32,25 +32,13 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 export async function exportStrataVideo(settings: StrataSettings, camera: ExportCamera,
   options: VideoExportOptions, format: "webm" | "mp4", signal: AbortSignal, onProgress: (progress: number) => void) {
   const resolution = videoResolutions.find((item) => item.value === options.resolution);
-  if (!resolution || ![24, 30, 60].includes(options.fps) || !Number.isFinite(options.duration) || options.duration < 1 || options.duration > 30) {
+  const timing = getVideoTiming(settings, options);
+  if (!resolution || ![24, 30, 60].includes(options.fps) || !Number.isSafeInteger(timing.frames) || timing.frames < 1 ||
+    (!timing.automatic && (!Number.isFinite(options.duration) || options.duration < 1 || options.duration > 30))) {
     throw new Error("Choose a supported resolution, FPS, and duration between 1 and 30 seconds.");
   }
   if (typeof VideoEncoder === "undefined") throw new Error("Video export needs a browser with WebCodecs video encoding. Try the latest Chrome or Edge.");
   const { width, height } = videoDimensions(resolution, settings.canvasAspect, settings.canvasAspectWidth, settings.canvasAspectHeight, camera.viewport);
-  // Seamless-loop mode: quantize the auto-rotate speed so an integer number
-  // of revolutions fits exactly within the capture window. The natural
-  // revolutions in `duration` seconds for a user-facing speed `rotateSpeed`
-  // is rotateSpeed * duration / 1200 (see OrbitControls autoRotate math).
-  // When loop is on we round that to the nearest integer (min 1) and
-  // recompute the OrbitControls autoRotateSpeed to produce exactly N revs.
-  const naturalRevolutions = (settings.rotateSpeed * options.duration) / 1200;
-  const loopRevolutions = Math.max(1, Math.round(naturalRevolutions));
-  // OrbitControls uses the no-delta branch inside drei's wrapper, so
-  // per-frame rotation = (π/1800) × autoRotateSpeed. For N revolutions over
-  // (duration × fps) frames: autoRotateSpeed = 3600 × N / (duration × fps).
-  const autoRotateSpeedForExport = options.loop && settings.autoRotate
-    ? (3600 * loopRevolutions) / (options.duration * options.fps)
-    : (settings.rotateSpeed / 20 * 60) / options.fps;
   const quality = new Quality({ bitrate: Math.round(width * height * options.fps *
     ({ standard: 0.08, high: 0.14, maximum: 0.22 }[options.quality])) });
   const codec = await getFirstEncodableVideoCodec(format === "mp4" ? ["avc"] : ["vp9", "vp8"], { width, height, frameRate: options.fps, quality });
@@ -77,8 +65,6 @@ export async function exportStrataVideo(settings: StrataSettings, camera: Export
         onCreated={({ gl }) => { gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1.15; }}>
         <Suspense fallback={null}>
           <color attach="background" args={[settings.backgroundColor]} />
-          <OrbitControls target={camera.target} enableDamping={false} enableRotate={false} enablePan={false} enableZoom={false}
-            autoRotate={settings.autoRotate} autoRotateSpeed={autoRotateSpeedForExport} />
           <MeshStrataScene settings={settings} labelReferenceHeight={camera.viewport?.height} />
           <Ready onReady={resolve} />
         </Suspense>
@@ -97,6 +83,16 @@ export async function exportStrataVideo(settings: StrataSettings, camera: Export
     signal.throwIfAborted();
     const canvas = state.gl.domElement;
     if (canvas.width !== width || canvas.height !== height) throw new Error(`The device created ${canvas.width} × ${canvas.height} instead of ${width} × ${height}. Please try again.`);
+    const target = new THREE.Vector3(...camera.target);
+    const initialOffset = new THREE.Vector3(...camera.position).sub(target);
+    const up = state.camera.up.clone().normalize();
+    const setCameraFrame = (frame: number) => {
+      state.camera.position.copy(initialOffset).applyAxisAngle(up, timing.rotationPerFrame * frame).add(target);
+      state.camera.lookAt(target);
+      state.camera.updateMatrixWorld();
+    };
+    // Derive the camera from the frame number: renderer warmup cannot advance it.
+    setCameraFrame(0);
     state.advance(0);
     state.advance(0);
     await abortable(state.gl.compileAsync(state.scene, state.camera), signal);
@@ -110,12 +106,12 @@ export async function exportStrataVideo(settings: StrataSettings, camera: Export
     source = new CanvasSource(composite, { codec, quality });
     output.addVideoTrack(source, { frameRate: options.fps });
     await output.start();
-    // When looping, we omit the final frame so playback wraps from frame
-    // N-1 straight back to frame 0 — which, with the quantized rotation
-    // speed, is visually identical to the frame that would come next.
-    const frames = Math.round(options.duration * options.fps) - (options.loop ? 1 : 0);
+    // Capture [0, N): the conceptual frame N matches frame 0. Keep all N frames
+    // so the last-to-first step has the same angular distance as every other step.
+    const frames = timing.frames;
     for (let frame = 0; frame < frames; frame++) {
       signal.throwIfAborted();
+      setCameraFrame(frame);
       state.advance(frame / options.fps);
       compositeCtx.clearRect(0, 0, width, height);
       compositeCtx.drawImage(canvas, 0, 0, width, height);

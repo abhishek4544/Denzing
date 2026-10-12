@@ -106,11 +106,6 @@ export type SecurityGridSettings = {
 
   // Hyper-real slab cube — solid stacked plates with metallic material
   cubeSlabsEnabled: boolean;
-  cubeLayerStyle: "slabs" | "sheets";
-  cubeSheetColor: string;
-  cubeSheetOpacity: number;
-  cubeSheetGrain: number;
-  cubeSheetSpacing: number;
   cubeSlabColor: string;
   cubeSlabMetalness: number;
   cubeSlabRoughness: number;
@@ -223,13 +218,4 @@ export type SecurityGridSettings = {
                                // (base end) outward from the cube axis.
 };
 
-export const defaultSecurityGridSettings: SecurityGridSettings = {
-  ...(presetDefault as Omit<SecurityGridSettings,
-    "cubeLayerStyle" | "cubeSheetColor" | "cubeSheetOpacity" | "cubeSheetGrain" | "cubeSheetSpacing">),
-  cubeSubdivisions: 3,
-  cubeLayerStyle: "sheets",
-  cubeSheetColor: "#555555",
-  cubeSheetOpacity: 72,
-  cubeSheetGrain: 35,
-  cubeSheetSpacing: 14,
-};
+export const defaultSecurityGridSettings = presetDefault as SecurityGridSettings;

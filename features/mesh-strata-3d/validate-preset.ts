@@ -1,4 +1,4 @@
-import { defaultStrataSettings, canvasAspectOptions, contentTypeOptions, frameShapeOptions, frameColorPresets, glassEnvOptions, layerConceptOptions, MAX_LAYERS, type StrataSettings } from "./defaults";
+import { defaultStrataSettings, canvasAspectOptions, contentTypeOptions, frameShapeOptions, frameColorPresets, layerConceptOptions, MAX_LAYERS, type StrataSettings } from "./defaults";
 
 /** Validate imported data before it reaches geometry allocation or shader uniforms. */
 export function validateStrataPreset(input: unknown): StrataSettings {
@@ -9,7 +9,6 @@ export function validateStrataPreset(input: unknown): StrataSettings {
     canvasAspect: canvasAspectOptions.map((x) => x.value),
     frameShape: frameShapeOptions.map((x) => x.value),
     frameColorPreset: frameColorPresets.map((x) => x.value),
-    frameGlassEnv: glassEnvOptions.map((x) => x.value),
     interlayerStyle: ["strings", "fan"],
     layerConcept: [...layerConceptOptions.map((x) => x.value), "data", "ontology", "logic", "orchestration", "outputs"],
     layerContent: contentTypeOptions.map((x) => x.value),

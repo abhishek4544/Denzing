@@ -39,6 +39,13 @@ export const tools: readonly ToolDefinition[] = [
       "Security-themed visualizer: subdivided cube above a binary data floor, connected by wires.",
     href: "/tools/security-grid-3d",
   },
+  {
+    id: "autonomous-agents-3d",
+    label: "Autonomous Agents 3D",
+    description:
+      "Autonomous agents workspace; starts from the Mesh Strata 3D template and will diverge over time.",
+    href: "/tools/autonomous-agents-3d",
+  },
 ];
 
 export const defaultTool = tools[0];

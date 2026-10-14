@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { SelectField, SliderField } from "@/components/tool-shell";
+import { FieldRow, SelectField, SliderField, ToggleField } from "@/components/tool-shell";
 import type { StrataSettings } from "./defaults";
 import { videoDimensions, videoResolutions, type ExportCamera, type VideoExportOptions } from "./export-options";
+import { getVideoTiming } from "./export-timing";
 
 function download(url: string, filename: string) {
   const link = document.createElement("a");
@@ -16,12 +17,14 @@ export default function ExportDialog({ settings, camera, onClose, onPng }: {
   settings: StrataSettings; camera: ExportCamera; onClose: () => void; onPng: () => void;
 }) {
   const [format, setFormat] = useState<"webm" | "mp4" | "png" | "code">("webm");
-  const [options, setOptions] = useState<VideoExportOptions>({ resolution: "1080p", fps: 30, duration: 10, quality: "high" });
+  const [options, setOptions] = useState<VideoExportOptions>({ resolution: "1080p", fps: 30, duration: 10, quality: "high", loop: true });
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<{ url: string; name: string; key: string } | null>(null);
-  const exportKey = JSON.stringify({ format, options });
+  const timing = getVideoTiming(settings, options);
+  const durationLabel = `${Number(timing.duration.toFixed(2))}s`;
+  const exportKey = JSON.stringify({ format, options, settings, camera });
   const isVideo = format === "webm" || format === "mp4";
   const controller = useRef<AbortController | null>(null);
   const resultUrl = useRef<string | null>(null);
@@ -51,7 +54,7 @@ export default function ExportDialog({ settings, camera, onClose, onPng }: {
       resultUrl.current = url;
       const name = format === "code" ? "mesh-strata-website.zip" : `mesh-strata-${options.resolution}-${options.fps}fps.${format}`;
       setResult({ url, name, key: exportKey });
-      setMessage(format === "code" ? "Ready · Website code ZIP with your current settings" : `Ready · ${format.toUpperCase()} · ${options.resolution.toUpperCase()} · ${options.fps} FPS · ${options.duration}s`);
+      setMessage(format === "code" ? "Ready · Website code ZIP with your current settings" : `Ready · ${format.toUpperCase()} · ${options.resolution.toUpperCase()} · ${options.fps} FPS · ${durationLabel}`);
       download(url, name);
     } catch (error) {
       setMessage(job.signal.aborted ? "Export cancelled." : error instanceof Error ? error.message : "Export failed. Please try again.");
@@ -80,8 +83,18 @@ export default function ExportDialog({ settings, camera, onClose, onPng }: {
               onChange={(fps) => setOptions((value) => ({...value, fps: Number(fps) as VideoExportOptions["fps"]}))} />
             <SelectField label="Quality" value={options.quality} options={[{value:"standard",label:"Standard"},{value:"high",label:"High"},{value:"maximum",label:"Maximum"}]}
               onChange={(quality) => setOptions((value) => ({...value, quality}))} />
-            <SliderField label="Duration (seconds)" value={options.duration} min={1} max={30}
-              onChange={(duration) => setOptions((value) => ({...value, duration}))} />
+            <ToggleField size="compact"
+              label="Seamless Loop"
+              checked={options.loop}
+              onCheckedChange={(loop) => setOptions((value) => ({...value, loop}))}
+            />
+            {timing.automatic ? <FieldRow label="Duration (auto)">
+              <output aria-label="Automatic loop duration" className="text-[10px]">{durationLabel}</output>
+            </FieldRow> : <SliderField label="Duration (seconds)" value={options.duration} min={1} max={30}
+              onChange={(duration) => setOptions((value) => ({...value, duration}))} />}
+            {options.loop && <p className="pl-3.5 pr-[7px] text-[10px] text-muted-foreground">
+              {timing.automatic ? "One full rotation at your current speed. Duration is set automatically." : "Auto rotation is off or its speed is zero. Choose a clip duration."}
+            </p>}
           </>}
         </fieldset>
         {busy && <div className="mt-4">

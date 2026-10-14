@@ -20,5 +20,8 @@ export type VideoExportOptions = {
   fps: 24 | 30 | 60;
   duration: number;
   quality: "standard" | "high" | "maximum";
+  /** Automatically size the clip for one full turn at the current rotation speed.
+   * With rotation off, use the manual duration. */
+  loop: boolean;
 };
 export type ExportCamera = { position: [number, number, number]; target: [number, number, number]; viewport?: { width: number; height: number } };

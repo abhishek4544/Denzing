@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { lazy, Suspense, useCallback, useRef, useState, type ComponentRef } from "react";
+import { Children, Fragment, isValidElement, lazy, Suspense, useCallback, useRef, useState, type ComponentRef, type ReactElement, type ReactNode } from "react";
 import type { OrbitControls } from "@react-three/drei";
+import * as THREE from "three";
 import { GripVertical } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import {
@@ -24,29 +25,107 @@ import {
   canvasAspectOptions,
   frameColorPresets,
   frameShapeOptions,
-  glassEnvOptions,
   layerConceptOptions,
   MAX_LAYERS,
   type FrameColorPreset,
   type FrameShape,
-  type GlassEnv,
   type LayerConcept,
   type StrataSettings,
   type CanvasAspect,
 } from "./defaults";
 import MeshStrataViewer from "./viewer";
 import { validateStrataPreset } from "./validate-preset";
-import { LayerOrderedControls } from "./layer-ordered-controls";
 import { CustomAspectDialog } from "./custom-aspect-dialog";
 import { exportStrataScene } from "./export-image";
 import type { ExportCamera } from "./export-options";
 
 const ExportDialog = lazy(() => import("./export-dialog"));
 
+/** Group heading row that sits between runs of Sections in the inspector.
+ * Not a Section itself — just a labeled divider so the long control list
+ * reads as 5-6 named zones instead of one wall of accordions. */
+function GroupHeading({ label }: { label: string }) {
+  return (
+    <div className="px-3.5 pt-5 pb-1.5 bg-card border-b border-border">
+      <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+        {label}
+      </span>
+    </div>
+  );
+}
+
+/** Maps each Section title to a {group, order} so children can be rendered
+ * in a predictable grouped order regardless of their source position. New
+ * sections default to the "misc" group at the bottom. */
+const SECTION_LAYOUT: Record<string, { group: string; order: number }> = {
+  "Preset": { group: "Stage", order: 0 },
+  "Stack & Layout": { group: "Stack & Layers", order: 10 },
+  "Pavilions (Top Layer)": { group: "Stack & Layers", order: 11 },
+  "Frame Wrapper": { group: "Stack & Layers", order: 12 },
+  "Wires Between Layers": { group: "Stack & Layers", order: 13 },
+  "Base Colors": { group: "Surface Look", order: 20 },
+  "Surface Wave & Content": { group: "Surface Look", order: 21 },
+  "Sparkle Layer": { group: "Per-Concept Tuning", order: 30 },
+  "Agent Layer": { group: "Per-Concept Tuning", order: 31 },
+  "Cloud Layer": { group: "Per-Concept Tuning", order: 32 },
+  "Terrain Layer": { group: "Per-Concept Tuning", order: 33 },
+  "Platforms Layer": { group: "Per-Concept Tuning", order: 34 },
+  "Box Layer": { group: "Per-Concept Tuning", order: 35 },
+  "Camera & Rotation": { group: "Camera & Motion", order: 40 },
+  "Cursor Response": { group: "Camera & Motion", order: 41 },
+  "Idle Sway": { group: "Camera & Motion", order: 42 },
+  "Depth of Field": { group: "Post-Processing", order: 50 },
+  "Bloom & Vignette": { group: "Post-Processing", order: 51 },
+};
+const GROUP_ORDER = ["Stage", "Stack & Layers", "Surface Look", "Per-Concept Tuning", "Camera & Motion", "Post-Processing", "Misc"];
+
+/** Reads each child Section's title, groups and sorts them, and injects a
+ * GroupHeading before the first section of each group. Children can be
+ * authored in any order — this hoists the IA into one lookup. */
+function GroupedSections({ children }: { children: ReactNode }) {
+  const sorted = Children.toArray(children)
+    .filter((child): child is ReactElement<{ title: string }> =>
+      isValidElement(child) && typeof (child.props as { title?: unknown }).title === "string",
+    )
+    .map((child) => {
+      const entry = SECTION_LAYOUT[child.props.title] ?? { group: "Misc", order: 999 };
+      return { child, group: entry.group, order: entry.order };
+    })
+    .sort((a, b) => {
+      const ag = GROUP_ORDER.indexOf(a.group);
+      const bg = GROUP_ORDER.indexOf(b.group);
+      if (ag !== bg) return ag - bg;
+      return a.order - b.order;
+    });
+  const items = sorted.map((item, i) => ({
+    ...item,
+    showHeading: i === 0 || item.group !== sorted[i - 1].group,
+  }));
+  return (
+    <>
+      {items.map(({ child, group, showHeading }, i) => (
+        <Fragment key={i}>
+          {showHeading ? <GroupHeading label={group} /> : null}
+          {child}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
 export function MeshStrata3DTool() {
   const [settings, setSettings] = useState<StrataSettings>(defaultStrataSettings);
   const [exportOpen, setExportOpen] = useState(false);
   const [customAspectOpen, setCustomAspectOpen] = useState(false);
+  const [openSection, setOpenSection] = useState<string | null>(null);
+  const sectionProps = useCallback(
+    (title: string) => ({
+      title,
+      open: openSection === title,
+      onOpenChange: (open: boolean) => setOpenSection(open ? title : null),
+    }),
+    [openSection],
+  );
   const selectAspect = (value: CanvasAspect) => {
     if (value === "custom") setCustomAspectOpen(true);
     else update("canvasAspect", value);
@@ -111,6 +190,37 @@ export function MeshStrata3DTool() {
     [],
   );
 
+  const setLayerBg = useCallback(
+    <K extends "layerBgOpacity" | "layerBgBlur" | "layerBgTransmission" | "layerBgColor">(
+      index: number,
+      key: K,
+      value: StrataSettings[K][number],
+    ) => {
+      setSettings((current) => {
+        const next = current[key].slice();
+        (next as (number | string)[])[index] = value;
+        return { ...current, [key]: next };
+      });
+    },
+    [],
+  );
+
+
+  const updatePavilion = useCallback(
+    <K extends keyof StrataSettings["pavilions"][number]>(
+      index: number,
+      key: K,
+      value: StrataSettings["pavilions"][number][K],
+    ) => {
+      setSettings((current) => {
+        const next = current.pavilions.slice();
+        next[index] = { ...next[index], [key]: value };
+        return { ...current, pavilions: next };
+      });
+    },
+    [],
+  );
+
   const setLayerName = useCallback((index: number, name: string) => {
     setSettings((current) => {
       const next = current.layerNames.slice();
@@ -145,6 +255,10 @@ export function MeshStrata3DTool() {
         layerContent: move(current.layerContent),
         layerConcept: move(current.layerConcept),
         layerBaseOpacity: move(current.layerBaseOpacity),
+        layerBgOpacity: move(current.layerBgOpacity),
+        layerBgBlur: move(current.layerBgBlur),
+        layerBgTransmission: move(current.layerBgTransmission),
+        layerBgColor: move(current.layerBgColor),
         layerAmplitudes: move(current.layerAmplitudes),
         layerWaveScales: move(current.layerWaveScales),
         layerNames: move(current.layerNames),
@@ -215,7 +329,8 @@ export function MeshStrata3DTool() {
     const host = canvasHostRef.current;
     if (!host) return;
     const gl = host.querySelector("canvas");
-    if (gl instanceof HTMLCanvasElement) exportStrataScene(gl);
+    if (!(gl instanceof HTMLCanvasElement)) return;
+    exportStrataScene(gl);
   }, []);
 
   // Pulled-back framing leaves breathing room around the full stack.
@@ -384,6 +499,44 @@ export function MeshStrata3DTool() {
                   />
                 </div>
               )}
+              <div className="px-2 pb-1 pt-1 space-y-1 border-t border-border/40">
+                <div className="text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground pb-0.5">
+                  Layer Background
+                </div>
+                <ColorField
+                  label="Color"
+                  color={
+                    settings.layerBgColor[i] ||
+                    settings.layerColors[i] ||
+                    settings.meshColor
+                  }
+                  opacity={100}
+                  onColorChange={(v) => setLayerBg(i, "layerBgColor", v)}
+                  onOpacityChange={() => {}}
+                  showPipette={false}
+                />
+                <SliderField
+                  label="Transparency"
+                  value={settings.layerBgOpacity[i] ?? 0}
+                  min={0}
+                  max={100}
+                  onChange={(v) => setLayerBg(i, "layerBgOpacity", v)}
+                />
+                <SliderField
+                  label="Blur"
+                  value={settings.layerBgBlur[i] ?? 40}
+                  min={0}
+                  max={100}
+                  onChange={(v) => setLayerBg(i, "layerBgBlur", v)}
+                />
+                <SliderField
+                  label="Background Blend"
+                  value={settings.layerBgTransmission[i] ?? 20}
+                  min={0}
+                  max={100}
+                  onChange={(v) => setLayerBg(i, "layerBgTransmission", v)}
+                />
+              </div>
               {!isLast && (
                 <div className="px-2 pb-1">
                   <SliderField
@@ -436,8 +589,8 @@ export function MeshStrata3DTool() {
         }
         onReset={onReset}
       >
-        <LayerOrderedControls concepts={settings.layerConcept.slice(0, settings.layerCount)}>
-        <Section title="Preset">
+        <GroupedSections>
+        <Section {...sectionProps("Preset")}>
           <div className="flex gap-1.5">
             <SectionButton
               onClick={onSavePreset}
@@ -454,7 +607,7 @@ export function MeshStrata3DTool() {
           </div>
         </Section>
 
-        <Section title="Stack">
+        <Section {...sectionProps("Stack & Layout")}>
           <SliderField
             label="Label Font Size"
             value={settings.layerLabelFontSize}
@@ -496,7 +649,150 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Deformation">
+        <Section {...sectionProps("Pavilions (Top Layer)")}>
+          <SliderField
+            label="Gutter"
+            value={settings.pavilionGutter}
+            min={0}
+            max={10}
+            step={0.1}
+            onChange={(v) => update("pavilionGutter", v)}
+          />
+          <SliderField
+            label="Row Split (Back %)"
+            value={settings.pavilionRowSplit}
+            min={20}
+            max={80}
+            step={0.5}
+            onChange={(v) => update("pavilionRowSplit", v)}
+          />
+          <SliderField
+            label="Back Split (Left %)"
+            value={settings.pavilionBackSplit}
+            min={20}
+            max={80}
+            step={0.5}
+            onChange={(v) => update("pavilionBackSplit", v)}
+          />
+          <SliderField
+            label="Height"
+            value={settings.pavilionHeight}
+            min={1}
+            max={30}
+            step={0.5}
+            onChange={(v) => update("pavilionHeight", v)}
+          />
+          <SliderField
+            label="Label Gap"
+            value={settings.pavilionLabelGap}
+            min={0}
+            max={20}
+            step={0.5}
+            onChange={(v) => update("pavilionLabelGap", v)}
+          />
+          {settings.pavilions.map((p, i) => (
+            <div
+              key={p.id}
+              className="border-t border-border/60 first:border-t-0 pt-2 pb-1 mt-2 first:mt-0 space-y-1.5"
+            >
+              <div className="flex items-center gap-1.5 px-1 pb-1">
+                <label
+                  className="relative w-3 h-3 rounded-[3px] border border-[#f2f2f3] shrink-0 cursor-pointer overflow-hidden"
+                  aria-label={`${p.id} color`}
+                >
+                  <span className="absolute inset-0" style={{ backgroundColor: p.color }} />
+                  <input
+                    type="color"
+                    value={p.color}
+                    onChange={(e) => updatePavilion(i, "color", e.target.value)}
+                    className="absolute inset-0 opacity-0 cursor-pointer"
+                  />
+                </label>
+                <span className="text-[11px] font-semibold text-foreground tracking-[-0.1px] uppercase">
+                  Slab {i + 1}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 px-1">
+                <span className="text-[10px] text-muted-foreground w-14 shrink-0">Name</span>
+                <input
+                  type="text"
+                  value={p.label}
+                  onChange={(e) => updatePavilion(i, "label", e.target.value)}
+                  className="flex-1 min-w-0 h-[22px] px-1.5 bg-muted text-[11px] text-foreground rounded-[4px] outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+              <div className="flex items-center gap-1.5 px-1">
+                <span className="text-[10px] text-muted-foreground w-14 shrink-0">Font</span>
+                <input
+                  type="text"
+                  value={p.fontFamily}
+                  onChange={(e) => updatePavilion(i, "fontFamily", e.target.value)}
+                  placeholder='"Violet Sans", sans-serif'
+                  className="flex-1 min-w-0 h-[22px] px-1.5 bg-muted text-[10px] text-foreground rounded-[4px] outline-none focus:ring-1 focus:ring-ring font-mono"
+                />
+              </div>
+              <ColorField
+                label="Text Color"
+                color={
+                  p.textColor && p.textColor.trim()
+                    ? p.textColor
+                    : (() => {
+                        // Reflect the auto-derived default (deepTint) in the
+                        // swatch when the user hasn't picked a color.
+                        const c = new THREE.Color(p.color);
+                        const hsl = { h: 0, s: 0, l: 0 };
+                        c.getHSL(hsl);
+                        c.setHSL(hsl.h, Math.min(1, hsl.s + 0.25), 0.1);
+                        return `#${c.getHexString()}`;
+                      })()
+                }
+                opacity={100}
+                onColorChange={(v) => updatePavilion(i, "textColor", v)}
+                onOpacityChange={() => {}}
+                showPipette={false}
+              />
+              <SliderField
+                label="Size (% of slab)"
+                value={p.fontSize}
+                min={5}
+                max={60}
+                step={0.5}
+                onChange={(v) => updatePavilion(i, "fontSize", v)}
+              />
+              <SliderField
+                label="Weight"
+                value={p.fontWeight}
+                min={100}
+                max={900}
+                step={100}
+                onChange={(v) => updatePavilion(i, "fontWeight", v)}
+              />
+              <SliderField
+                label="Glow"
+                value={p.glow}
+                min={0}
+                max={100}
+                onChange={(v) => updatePavilion(i, "glow", v)}
+              />
+              <SliderField
+                label="Reflection"
+                value={p.reflection}
+                min={0}
+                max={100}
+                onChange={(v) => updatePavilion(i, "reflection", v)}
+              />
+              <SliderField
+                label="Noise"
+                value={p.noise}
+                min={0}
+                max={100}
+                onChange={(v) => updatePavilion(i, "noise", v)}
+              />
+            </div>
+          ))}
+        </Section>
+
+        <Section {...sectionProps("Surface Wave & Content")}>
           <SliderField
             label="Amplitude"
             value={settings.amplitude}
@@ -574,7 +870,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Colors">
+        <Section {...sectionProps("Base Colors")}>
           <ColorField
             label="Mesh (all)"
             color={settings.meshColor}
@@ -616,7 +912,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Frame">
+        <Section {...sectionProps("Frame Wrapper")}>
           <SelectField
             label="Shape"
             value={settings.frameShape}
@@ -690,97 +986,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Glass">
-          <ToggleField size="compact"
-            label="Enable Glass"
-            checked={settings.frameGlass}
-            onCheckedChange={(v) => update("frameGlass", v)}
-          />
-          <SelectField
-            label="Environment"
-            value={settings.frameGlassEnv}
-            onChange={(v) => update("frameGlassEnv", v as GlassEnv)}
-            options={glassEnvOptions.map((o) => ({
-              value: o.value,
-              label: o.label,
-            }))}
-          />
-          <ColorField
-            label="Inside"
-            color={settings.frameGlassTint}
-            opacity={100}
-            onColorChange={(v) => update("frameGlassTint", v)}
-            onOpacityChange={() => {}}
-            showPipette={false}
-          />
-          <ColorField
-            label="Stroke"
-            color={settings.frameColor}
-            opacity={settings.frameOpacity}
-            onColorChange={(v) => {
-              update("frameColor", v);
-              update("frameColorPreset", "custom");
-            }}
-            onOpacityChange={(v) => update("frameOpacity", v)}
-            showPipette={false}
-          />
-          <SliderField
-            label="Roughness"
-            value={settings.frameGlassRoughness}
-            min={0}
-            max={100}
-            onChange={(v) => update("frameGlassRoughness", v)}
-          />
-          <SliderField
-            label="IOR"
-            value={settings.frameGlassIOR}
-            min={100}
-            max={250}
-            onChange={(v) => update("frameGlassIOR", v)}
-          />
-          <SliderField
-            label="Thickness"
-            value={settings.frameGlassThickness}
-            min={0}
-            max={100}
-            onChange={(v) => update("frameGlassThickness", v)}
-          />
-          <SliderField
-            label="Chromatic"
-            value={settings.frameGlassChromatic}
-            min={0}
-            max={100}
-            onChange={(v) => update("frameGlassChromatic", v)}
-          />
-          <SliderField
-            label="Anisotropy"
-            value={settings.frameGlassAnisotropy}
-            min={0}
-            max={100}
-            onChange={(v) => update("frameGlassAnisotropy", v)}
-          />
-          <SliderField
-            label="Distortion"
-            value={settings.frameGlassDistortion}
-            min={0}
-            max={100}
-            onChange={(v) => update("frameGlassDistortion", v)}
-          />
-          <SliderField
-            label="Attenuation"
-            value={settings.frameGlassAttenuation}
-            min={0}
-            max={100}
-            onChange={(v) => update("frameGlassAttenuation", v)}
-          />
-          <ToggleField size="compact"
-            label="Backside Refraction"
-            checked={settings.frameGlassBackside}
-            onCheckedChange={(v) => update("frameGlassBackside", v)}
-          />
-        </Section>
-
-        <Section title="Sparkle">
+        <Section {...sectionProps("Sparkle Layer")}>
           <SliderField
             label="Layer Height (all)"
             value={settings.sparkleHeight}
@@ -910,7 +1116,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Agent">
+        <Section {...sectionProps("Agent Layer")}>
           <ColorField
             label="Signal Color"
             color={settings.agentSignalColor}
@@ -1081,7 +1287,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Terrain">
+        <Section {...sectionProps("Terrain Layer")}>
           <SliderField
             label="Grid Resolution"
             value={settings.terrainGridN}
@@ -1161,7 +1367,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Interlayer Fanout">
+        <Section {...sectionProps("Wires Between Layers")}>
           <ToggleField size="compact"
             label="Enabled"
             checked={settings.interlayerEnabled}
@@ -1366,7 +1572,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Cloud">
+        <Section {...sectionProps("Cloud Layer")}>
           <ColorField
             label="Color A"
             color={settings.cloudColorB}
@@ -1422,7 +1628,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Blur">
+        <Section {...sectionProps("Depth of Field")}>
           <SliderField
             label="Layer Blur"
             value={settings.layerBlur}
@@ -1446,7 +1652,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Camera">
+        <Section {...sectionProps("Camera & Rotation")}>
           <SelectField label="Aspect Ratio" value={settings.canvasAspect ?? "auto"}
             options={canvasAspectOptions} onChange={selectAspect} />
           {settings.canvasAspect === "custom" && <SectionButton onClick={() => setCustomAspectOpen(true)}>Edit custom ratio</SectionButton>}
@@ -1476,7 +1682,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Platforms">
+        <Section {...sectionProps("Platforms Layer")}>
           <ColorField
             label="Color"
             color={settings.platformColor}
@@ -1508,7 +1714,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Data Foundation (Box)">
+        <Section {...sectionProps("Box Layer")}>
           <ColorField
             label="Color"
             color={settings.foundationColor}
@@ -1576,7 +1782,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Cursor">
+        <Section {...sectionProps("Cursor Response")}>
           <SliderField
             label="Radius"
             value={settings.cursorRadius}
@@ -1616,7 +1822,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Idle Motion">
+        <Section {...sectionProps("Idle Sway")}>
           <SliderField
             label="Amplitude"
             value={settings.idleAmplitude}
@@ -1640,7 +1846,7 @@ export function MeshStrata3DTool() {
           />
         </Section>
 
-        <Section title="Post FX">
+        <Section {...sectionProps("Bloom & Vignette")}>
           <SliderField
             label="Bloom Intensity"
             value={settings.bloomIntensity}
@@ -1649,7 +1855,7 @@ export function MeshStrata3DTool() {
             onChange={(v) => update("bloomIntensity", v)}
           />
         </Section>
-        </LayerOrderedControls>
+        </GroupedSections>
       </ControlsPanel>
     </ToolShell>
   );

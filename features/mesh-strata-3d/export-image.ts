@@ -1,3 +1,5 @@
+/** Export the current viewer as a PNG. The scene renders everything inside
+ * WebGL (including the pavilion labels), so no overlay compositing is needed. */
 export function exportStrataScene(canvas: HTMLCanvasElement) {
   const url = canvas.toDataURL("image/png");
   const link = document.createElement("a");

@@ -26,21 +26,6 @@ export const frameColorPresets = [
 
 export type FrameColorPreset = (typeof frameColorPresets)[number]["value"];
 
-export const glassEnvOptions = [
-  { value: "studio", label: "Studio" },
-  { value: "city", label: "City" },
-  { value: "apartment", label: "Apartment" },
-  { value: "lobby", label: "Lobby" },
-  { value: "warehouse", label: "Warehouse" },
-  { value: "sunset", label: "Sunset" },
-  { value: "dawn", label: "Dawn" },
-  { value: "park", label: "Park" },
-  { value: "forest", label: "Forest" },
-  { value: "night", label: "Night" },
-] as const;
-
-export type GlassEnv = (typeof glassEnvOptions)[number]["value"];
-
 export const MAX_LAYERS = 14;
 
 export const contentTypeOptions = [
@@ -64,6 +49,7 @@ export const layerConceptOptions = [
   { value: "agent", label: "Agent" },
   { value: "sparkle", label: "Sparkle" },
   { value: "terrain", label: "Terrain" },
+  { value: "pavilions", label: "Pavilions" },
 ] as const;
 
 // The renderer also supports the original concept meshes, although the
@@ -75,6 +61,75 @@ export type LayerConcept =
   | "logic"
   | "orchestration"
   | "outputs";
+
+/** Fixed trio of capability pavilions that stand on the top plaza layer.
+ * Colors mirror the previous badge palette so returning viewers recognize
+ * the mapping. Labels, color, font family, size and weight are all editable
+ * via the Pavilions section. */
+export const PAVILION_IDS = ["aiAnalytics", "autonomousAgents", "yourOwnAi"] as const;
+export type PavilionId = (typeof PAVILION_IDS)[number];
+
+export type PavilionDef = {
+  id: PavilionId;
+  label: string;
+  color: string;
+  /** CSS font-family stack applied to the capability text. */
+  fontFamily: string;
+  /** Font size as a % of the slab's shortest horizontal edge. */
+  fontSize: number;
+  /** Font weight (100..900, 400 = regular, 700 = bold). */
+  fontWeight: number;
+  /** Interior luminosity (0..100) — drives emissiveIntensity. */
+  glow: number;
+  /** Reflection polish (0..100) — drives clearcoat + envMap intensity. */
+  reflection: number;
+  /** Surface noise (0..100) — modulates roughness variation. */
+  noise: number;
+  /** Label text color. Empty string = auto-derive from slab color via a
+   * deep-tint rule so text stays legible against the glass. */
+  textColor: string;
+};
+
+const PAVILION_FONT = '"Violet Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+
+export const DEFAULT_PAVILIONS: readonly PavilionDef[] = [
+  {
+    id: "aiAnalytics",
+    label: "AI ANALYTICS",
+    color: "#f49eff",
+    fontFamily: PAVILION_FONT,
+    fontSize: 44.5,
+    fontWeight: 900,
+    glow: 55,
+    reflection: 65,
+    noise: 25,
+    textColor: "",
+  },
+  {
+    id: "autonomousAgents",
+    label: "AUTONOMOUS AGENTS",
+    color: "#38d7ff",
+    fontFamily: PAVILION_FONT,
+    fontSize: 44.5,
+    fontWeight: 900,
+    glow: 55,
+    reflection: 65,
+    noise: 25,
+    textColor: "",
+  },
+  {
+    id: "yourOwnAi",
+    label: "YOUR OWN AI",
+    color: "#84d698",
+    fontFamily: PAVILION_FONT,
+    fontSize: 44.5,
+    fontWeight: 900,
+    glow: 55,
+    reflection: 65,
+    noise: 25,
+    textColor: "",
+  },
+];
 
 export const canvasAspectOptions = [
   { value: "auto", label: "Auto · Fit stage" },
@@ -111,6 +166,15 @@ export type StrataSettings = {
   layerWaveScales: number[];
   /** Per-layer base wave opacity when the layer has content on top (0..100). */
   layerBaseOpacity: number[];
+  /** Per-layer background fill alpha (0..100). 0 hides the fill. */
+  layerBgOpacity: number[];
+  /** Per-layer background fill blur / roughness (0..100). */
+  layerBgBlur: number[];
+  /** Per-layer background transmission (0..100). 0 = solid tint,
+   * 100 = clear glass passing the backdrop through. */
+  layerBgTransmission: number[];
+  /** Per-layer background fill color. Empty string = inherit layer color. */
+  layerBgColor: string[];
   /** Per-layer content type (length = MAX_LAYERS). */
   layerContent: ContentType[];
   /** Per-layer semantic concept baked into the mesh (length = MAX_LAYERS). */
@@ -353,29 +417,6 @@ export type StrataSettings = {
   frameGridColor: string;
   frameGridOpacity: number;
 
-  /** Realistic glass fill on the frame (uses MeshTransmissionMaterial). */
-  frameGlass: boolean;
-  /** HDRI preset that drives reflections & refractions. */
-  frameGlassEnv: GlassEnv;
-  /** Roughness of the glass surface (0..100). */
-  frameGlassRoughness: number;
-  /** Index of refraction (100..250 → 1.0..2.5). */
-  frameGlassIOR: number;
-  /** Physical thickness for refraction depth (0..100). */
-  frameGlassThickness: number;
-  /** Chromatic aberration strength (0..100). */
-  frameGlassChromatic: number;
-  /** Anisotropic blur (0..100). */
-  frameGlassAnisotropy: number;
-  /** Distortion strength (0..100). */
-  frameGlassDistortion: number;
-  /** Attenuation distance — how quickly tint absorbs light (0..100). */
-  frameGlassAttenuation: number;
-  /** Glass tint colour (independent from wireframe frame color). */
-  frameGlassTint: string;
-  /** Backside pass for double-sided refraction (heavier). */
-  frameGlassBackside: boolean;
-
   layerBlur: number;
   blurFocus: number;
   blurRange: number;
@@ -401,6 +442,19 @@ export type StrataSettings = {
   bloomSmoothing: number;
   vignette: number;
 
+  /** Gutter between pavilion slabs as a % of plane width. */
+  pavilionGutter: number;
+  /** Back row depth as a % of plaza depth (back row holds the two smaller
+   * slabs; the remaining depth is the one wide front slab). */
+  pavilionRowSplit: number;
+  /** Back-left slab width as a % of back row width. */
+  pavilionBackSplit: number;
+  /** Pavilion slab height as a % of plane width. */
+  pavilionHeight: number;
+  /** Pavilion label gap above the top face as a % of plane width. */
+  pavilionLabelGap: number;
+  /** Per-pavilion label, color, font family, size and weight. */
+  pavilions: PavilionDef[];
 };
 
 /** Scene-space Y of the top layer. Mirrors the stack layout in `scene.tsx`. */
@@ -420,17 +474,21 @@ export const defaultStrataSettings: StrataSettings = {
   canvasAspect: "auto",
   canvasAspectWidth: 16,
   canvasAspectHeight: 9,
-  layerCount: 5,
-  layerGaps: [108,91,91,80,62,62,62,62,62,62,62,62,62],
-  layerColors: ["#9897f2","#f1e9da","#f9f0e1","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c"],
-  layerAmplitudes: [82,82,82,82,82,82,82,82,82,82,82,82,82,82],
+  layerCount: 6,
+  layerGaps: [71,100,100,100,100,62,62,62,62,62,62,62,62],
+  layerColors: ["#f8f6ff","#9897f2","#f1e9da","#f9f0e1","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c"],
+  layerAmplitudes: [0,82,82,82,82,82,82,82,82,82,82,82,82,82],
   layerWaveScales: [44,44,44,44,44,44,44,44,44,44,44,44,44,44],
-  layerBaseOpacity: [35,35,15,14,45,35,35,35,35,35,35,35,35,35],
+  layerBaseOpacity: [20,35,35,15,14,72,35,35,35,35,35,35,35,35],
+  layerBgOpacity: [0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+  layerBgBlur: [40,40,40,40,40,40,40,40,40,40,40,40,40,40],
+  layerBgTransmission: [20,20,20,20,20,20,20,20,20,20,20,20,20,20],
+  layerBgColor: ["","","","","","","","","","","","","",""],
   layerContent: ["none","none","none","none","none","none","none","none","none","none","none","none","none","none"],
-  layerConcept: ["sparkle","agent","box","cloud","uniform","uniform","uniform","uniform","uniform","uniform","uniform","uniform","uniform","uniform"],
+  layerConcept: ["pavilions","sparkle","agent","box","cloud","uniform","uniform","uniform","uniform","uniform","uniform","uniform","uniform","uniform"],
   layerLabelFontSize: 12,
-  layerNames: ["AGENT RUNTIME","ONTOLOGY","ML & ACTIONS","DATA FOUNDATIONS","SYSTEMS","","","","","","","","",""],
-  layerEscapeHeight: [35,35,35,37,35,35,35,35,35,35,35,35,35,35],
+  layerNames: ["SURFACE","AGENT RUNTIME","ONTOLOGY","ML & ACTIONS","DATA FOUNDATIONS","SYSTEMS","","","","","","","",""],
+  layerEscapeHeight: [35,35,35,35,37,35,35,35,35,35,35,35,35,35],
   layerSparkleHeight: [null,null,null,null,null,null,null,null,null,null,null,null,null,null],
 
   cloudDotSize: 0.75,
@@ -494,7 +552,7 @@ export const defaultStrataSettings: StrataSettings = {
   interlayerClusterSize: 1,
   interlayerCapSize: 0,
   interlayerSeed: 66,
-  interlayerWiresPerHubByPair: [5,21,36,63,null,null,null,null,null,null,null,null,null],
+  interlayerWiresPerHubByPair: [9,11,15,61,23,null,null,null,null,null,null,null,null],
   interlayerEnabledByPair: [null,null,null,null,null,null,null,null,null,null,null,null,null],
   interlayerCascade: 75,
   interlayerUsePalette: false,
@@ -542,10 +600,10 @@ export const defaultStrataSettings: StrataSettings = {
   foundationMaxHeight: 104,
   foundationMinThickness: 50,
   foundationVariance: 59,
-  foundationCount: 18,
-  foundationBoxGap: 7,
-  foundationFillOpacity: 38,
-  foundationEdgeOpacity: 13,
+  foundationCount: 16,
+  foundationBoxGap: 17,
+  foundationFillOpacity: 51,
+  foundationEdgeOpacity: 0,
   planeSize: 12.8,
   segments: 80,
 
@@ -567,28 +625,17 @@ export const defaultStrataSettings: StrataSettings = {
   frameShape: "cube",
   frameColorPreset: "custom",
   framePadding: 0,
-  frameOpacity: 6,
+  frameOpacity: 0,
 
-  frameGridEnabled: true,
+  frameGridEnabled: false,
   frameGridResolution: 30,
   frameGridColor: "#f0eff5",
   frameGridOpacity: 2,
 
-  frameGlass: false,
-  frameGlassEnv: "studio",
-  frameGlassRoughness: 0,
-  frameGlassIOR: 100,
-  frameGlassThickness: 1,
-  frameGlassChromatic: 0,
-  frameGlassAnisotropy: 11,
-  frameGlassDistortion: 17,
-  frameGlassAttenuation: 100,
-  frameGlassTint: "#ffffff",
-  frameGlassBackside: true,
 
   layerBlur: 0,
-  blurFocus: 7,
-  blurRange: 13,
+  blurFocus: 22,
+  blurRange: 35,
 
   cursorRadius: 2.7,
   cursorStrength: 1.2,
@@ -605,8 +652,15 @@ export const defaultStrataSettings: StrataSettings = {
   fov: 29,
   isoView: false,
 
-  bloomIntensity: 2,
+  bloomIntensity: 20,
   bloomThreshold: 10,
   bloomSmoothing: 24,
-  vignette: 0,
+  vignette: 20,
+
+  pavilionGutter: 2.4,
+  pavilionRowSplit: 50,
+  pavilionBackSplit: 50,
+  pavilionHeight: 8.5,
+  pavilionLabelGap: 3,
+  pavilions: DEFAULT_PAVILIONS.map((p) => ({ ...p })),
 };

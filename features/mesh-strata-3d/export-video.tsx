@@ -3,13 +3,13 @@
 import { Suspense, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { Canvas, useThree, type RootState } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { BufferTarget, CanvasSource, getFirstEncodableVideoCodec, Output, Quality, Mp4OutputFormat, WebMOutputFormat } from "mediabunny";
 import { MeshStrataScene } from "./scene";
 import { loadVioletFont } from "./layer-name-label";
 import type { StrataSettings } from "./defaults";
 import { videoDimensions, videoResolutions, type ExportCamera, type VideoExportOptions } from "./export-options";
+import { getVideoTiming } from "./export-timing";
 
 function Ready({ onReady }: { onReady: (state: RootState) => void }) {
   const get = useThree((state) => state.get);
@@ -31,7 +31,9 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 export async function exportStrataVideo(settings: StrataSettings, camera: ExportCamera,
   options: VideoExportOptions, format: "webm" | "mp4", signal: AbortSignal, onProgress: (progress: number) => void) {
   const resolution = videoResolutions.find((item) => item.value === options.resolution);
-  if (!resolution || ![24, 30, 60].includes(options.fps) || !Number.isFinite(options.duration) || options.duration < 1 || options.duration > 30) {
+  const timing = getVideoTiming(settings, options);
+  if (!resolution || ![24, 30, 60].includes(options.fps) || !Number.isSafeInteger(timing.frames) || timing.frames < 1 ||
+    (!timing.automatic && (!Number.isFinite(options.duration) || options.duration < 1 || options.duration > 30))) {
     throw new Error("Choose a supported resolution, FPS, and duration between 1 and 30 seconds.");
   }
   if (typeof VideoEncoder === "undefined") throw new Error("Video export needs a browser with WebCodecs video encoding. Try the latest Chrome or Edge.");
@@ -62,8 +64,6 @@ export async function exportStrataVideo(settings: StrataSettings, camera: Export
         onCreated={({ gl }) => { gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = 1.15; }}>
         <Suspense fallback={null}>
           <color attach="background" args={[settings.backgroundColor]} />
-          <OrbitControls target={camera.target} enableDamping={false} enableRotate={false} enablePan={false} enableZoom={false}
-            autoRotate={settings.autoRotate} autoRotateSpeed={settings.rotateSpeed / 20 * 60 / options.fps} />
           <MeshStrataScene settings={settings} labelReferenceHeight={camera.viewport?.height} />
           <Ready onReady={resolve} />
         </Suspense>
@@ -82,15 +82,28 @@ export async function exportStrataVideo(settings: StrataSettings, camera: Export
     signal.throwIfAborted();
     const canvas = state.gl.domElement;
     if (canvas.width !== width || canvas.height !== height) throw new Error(`The device created ${canvas.width} × ${canvas.height} instead of ${width} × ${height}. Please try again.`);
+    const target = new THREE.Vector3(...camera.target);
+    const initialOffset = new THREE.Vector3(...camera.position).sub(target);
+    const up = state.camera.up.clone().normalize();
+    const setCameraFrame = (frame: number) => {
+      state.camera.position.copy(initialOffset).applyAxisAngle(up, timing.rotationPerFrame * frame).add(target);
+      state.camera.lookAt(target);
+      state.camera.updateMatrixWorld();
+    };
+    // Derive the camera from the frame number: renderer warmup cannot advance it.
+    setCameraFrame(0);
     state.advance(0);
     state.advance(0);
     await abortable(state.gl.compileAsync(state.scene, state.camera), signal);
     source = new CanvasSource(canvas, { codec, quality });
     output.addVideoTrack(source, { frameRate: options.fps });
     await output.start();
-    const frames = Math.round(options.duration * options.fps);
+    // Capture [0, N): the conceptual frame N matches frame 0. Keep all N frames
+    // so the last-to-first step has the same angular distance as every other step.
+    const frames = timing.frames;
     for (let frame = 0; frame < frames; frame++) {
       signal.throwIfAborted();
+      setCameraFrame(frame);
       state.advance(frame / options.fps);
       await source.add(frame / options.fps, 1 / options.fps);
       onProgress((frame + 1) / frames * 0.95);

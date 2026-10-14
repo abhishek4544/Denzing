@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ComponentRef, type Ref } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentRef, type Ref } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
@@ -52,27 +52,56 @@ export default function MeshStrataViewer({ settings = defaultStrataSettings,
     const update = () => setPageVisible(!document.hidden);
     update();
     document.addEventListener("visibilitychange", update);
-    const observer = new IntersectionObserver(([entry]) => setInView(entry.isIntersecting));
+    // rootMargin keeps the frameloop active while the canvas is near-but-not-
+    // in viewport, avoiding on/off thrash during scroll which stutters
+    // autoRotate on every resume. Threshold 0 is fine with the margin buffer.
+    const observer = new IntersectionObserver(
+      ([entry]) => setInView(entry.isIntersecting),
+      { rootMargin: "200px 0px" },
+    );
     if (host.current) observer.observe(host.current);
     return () => { observer.disconnect(); document.removeEventListener("visibilitychange", update); };
   }, []);
-  const distance = 45;
+  // Pulled further back so autoRotate feels calmer — the stack subtends a
+  // smaller angle per frame, making any residual loop-point hitch much less
+  // perceptible. Zoom range widened to match.
+  const distance = 60;
   const aspect = canvasAspectValue(settings.canvasAspect, settings.canvasAspectWidth, settings.canvasAspectHeight);
-  const position: [number, number, number] = initialCamera?.position ?? (settings.isoView
-    ? [distance * 0.72, distance * 0.62, distance * 0.72]
-    : [distance * 0.02, distance * 0.09, distance]);
+  // Memoize array props passed to Canvas/OrbitControls so a new reference each
+  // render doesn't trigger drei's internal effects (which re-sync camera state
+  // and visibly reset autoRotate progress).
+  const position = useMemo<[number, number, number]>(
+    () =>
+      initialCamera?.position ??
+      (settings.isoView
+        ? [distance * 0.72, distance * 0.62, distance * 0.72]
+        : [distance * 0.02, distance * 0.09, distance]),
+    [initialCamera?.position, settings.isoView],
+  );
+  const target = useMemo<[number, number, number]>(
+    () => initialCamera?.target ?? [0, 0, 0],
+    [initialCamera?.target],
+  );
+  // Keep the Canvas camera options stable when a camera setting changes.
+  // Runtime applies the latest FOV to the existing camera; changing this
+  // options object would make R3F replace the camera and reset autoRotate.
+  const [initialFov] = useState(() => settings.fov);
+  const camera = useMemo(
+    () => ({ position, fov: initialFov, near: 0.1, far: 200 }),
+    [initialFov, position],
+  );
   return <div ref={host} style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", containerType: "size", pointerEvents: interactive ? "auto" : "none" }}>
-    <div style={{ width: aspect ? `min(100cqw, ${aspect * 100}cqh)` : "100%", height: aspect ? `min(100cqh, ${100 / aspect}cqw)` : "100%", overflow: "hidden", borderRadius: 8 }}>
+    <div style={{ position: "relative", width: aspect ? `min(100cqw, ${aspect * 100}cqh)` : "100%", height: aspect ? `min(100cqh, ${100 / aspect}cqw)` : "100%", overflow: "hidden", borderRadius: 8 }}>
     <Canvas dpr={[1, Math.max(1, maxDpr)]}
       gl={{ antialias: true, powerPreference: "high-performance",
         preserveDrawingBuffer, alpha: false, stencil: false }}
-      camera={{ position, fov: settings.fov, near: 0.1, far: 200 }}>
+      camera={camera}>
       <color attach="background" args={[settings.backgroundColor]} />
       <Runtime settings={settings} active={inView && pageVisible && !paused} />
       {process.env.NODE_ENV === "development" && <RendererDiagnostics />}
       <OrbitControls ref={controlsRef} enableRotate={interactive} enableZoom={interactive} enablePan={interactive} enableDamping dampingFactor={0.08}
-        minDistance={10} maxDistance={60} autoRotate={settings.autoRotate}
-        autoRotateSpeed={settings.rotateSpeed / 20} makeDefault target={initialCamera?.target ?? [0, 0, 0]} />
+        minDistance={10} maxDistance={90} autoRotate={settings.autoRotate}
+        autoRotateSpeed={settings.rotateSpeed / 20} makeDefault target={target} />
       <MeshStrataScene settings={settings} labelReferenceHeight={initialCamera?.viewport?.height} />
     </Canvas>
     </div>

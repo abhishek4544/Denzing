@@ -53,8 +53,26 @@ export function FoundationBatch({ positions, heightFactors, width, maxHeight,
   }, [geometries]);
 
   const materials = useMemo(() => {
-    const fill = new THREE.MeshBasicMaterial({ color, transparent: true,
-      opacity: fillOpacity, depthWrite: false, toneMapped: false });
+    // Glass fill — transmission samples the scene snapshot per fragment, so
+    // each box face reads as its own refractive pane even though they share
+    // one merged geometry. Edges stay crisp via the lineSegments overlay.
+    const fill = new THREE.MeshPhysicalMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.35,
+      roughness: 0.22,
+      metalness: 0,
+      transmission: 0.85,
+      thickness: Math.max(0.1, width * 0.8),
+      ior: 1.4,
+      attenuationColor: new THREE.Color(color),
+      attenuationDistance: 1.5,
+      clearcoat: 1,
+      clearcoatRoughness: 0.08,
+      transparent: true,
+      opacity: fillOpacity,
+      depthWrite: false,
+    });
     const edge = new THREE.LineBasicMaterial({ color, transparent: true,
       opacity: edgeOpacity, depthWrite: false, toneMapped: false });
     for (const material of [fill, edge]) {
@@ -86,7 +104,7 @@ export function FoundationBatch({ positions, heightFactors, width, maxHeight,
       material.customProgramCacheKey = () => "foundation-batch-v1";
     }
     return { fill, edge };
-  }, [color, fillOpacity, edgeOpacity, layerY, bob, size, sharedUniforms]);
+  }, [color, fillOpacity, edgeOpacity, layerY, bob, size, width, sharedUniforms]);
   useEffect(() => () => { materials.fill.dispose(); materials.edge.dispose(); }, [materials]);
 
   return <group position={[0, layerY, 0]}>

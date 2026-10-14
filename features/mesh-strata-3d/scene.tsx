@@ -6,6 +6,8 @@ import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
 import { FoundationBatch } from "./foundation-batch";
 import { LayerNameLabel } from "./layer-name-label";
+import { PavilionsLayer } from "./pavilions-layer";
+import { LayerGlass } from "./layer-glass";
 import { Environment, Lightformer, MeshTransmissionMaterial } from "@react-three/drei";
 import {
   Bloom,
@@ -16,7 +18,6 @@ import {
 import type {
   ContentType,
   FrameShape,
-  GlassEnv,
   LayerConcept,
   StrataSettings,
 } from "./defaults";
@@ -4480,95 +4481,6 @@ function FrameSideGrid({
   );
 }
 
-function buildFrameSolidGeometry(
-  shape: FrameShape,
-  size: number,
-  height: number,
-): THREE.BufferGeometry | null {
-  const r = size / 2;
-  switch (shape) {
-    case "none":
-    case "pillars":
-    case "rings":
-      return null;
-    case "cube":
-      return new THREE.BoxGeometry(size, height, size, 1, 1, 1);
-    case "hex":
-      return new THREE.CylinderGeometry(r, r, height, 6, 1, false);
-    case "oct":
-      return new THREE.CylinderGeometry(r, r, height, 8, 1, false);
-    case "cylinder":
-      return new THREE.CylinderGeometry(r, r, height, 64, 1, false);
-  }
-}
-
-function FrameGlass({
-  shape,
-  size,
-  height,
-  tint,
-  roughness,
-  ior,
-  thickness,
-  chromatic,
-  anisotropy,
-  distortion,
-  attenuation,
-  backside,
-}: {
-  shape: FrameShape;
-  size: number;
-  height: number;
-  tint: string;
-  roughness: number;
-  ior: number;
-  thickness: number;
-  chromatic: number;
-  anisotropy: number;
-  distortion: number;
-  attenuation: number;
-  backside: boolean;
-}) {
-  const geometry = useMemo(
-    () => buildFrameSolidGeometry(shape, size, height),
-    [shape, size, height],
-  );
-  useEffect(
-    () => () => {
-      if (geometry) geometry.dispose();
-    },
-    [geometry],
-  );
-  if (!geometry) return null;
-  const attenuationDistance = 0.4 + (attenuation / 100) * 10;
-  const physicalThickness = (thickness / 100) * Math.max(size, height);
-  return (
-    <mesh geometry={geometry} renderOrder={-1}>
-      <MeshTransmissionMaterial
-        transmission={1}
-        roughness={roughness / 100}
-        thickness={physicalThickness}
-        ior={ior / 100}
-        chromaticAberration={chromatic / 400}
-        anisotropicBlur={anisotropy / 100}
-        distortion={distortion / 200}
-        distortionScale={0.3}
-        temporalDistortion={0}
-        attenuationColor={tint}
-        attenuationDistance={attenuationDistance}
-        color={tint}
-        backside={backside}
-        backsideThickness={physicalThickness * 0.5}
-        samples={6}
-        resolution={512}
-        clearcoat={1}
-        clearcoatRoughness={0.05}
-        toneMapped={false}
-      />
-    </mesh>
-  );
-}
-
 function FrameEdges({
   shape,
   size,
@@ -4614,6 +4526,10 @@ export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: 
     layerContent,
     layerConcept,
     layerBaseOpacity,
+    layerBgOpacity,
+    layerBgBlur,
+    layerBgTransmission,
+    layerBgColor,
     contentDensity,
     contentSize,
     contentOpacity,
@@ -4737,17 +4653,6 @@ export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: 
     sparkleWave,
     sparkleWaveSpeed,
     sparkleWaveHeight,
-    frameGlass,
-    frameGlassEnv,
-    frameGlassRoughness,
-    frameGlassIOR,
-    frameGlassThickness,
-    frameGlassChromatic,
-    frameGlassAnisotropy,
-    frameGlassDistortion,
-    frameGlassAttenuation,
-    frameGlassTint,
-    frameGlassBackside,
     layerBlur,
     blurFocus,
     blurRange,
@@ -4764,6 +4669,11 @@ export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: 
     idleAmplitude,
     idleScale,
     idleSpeed,
+    pavilionGutter,
+    pavilionRowSplit,
+    pavilionBackSplit,
+    pavilionHeight,
+    pavilionLabelGap,
   } = settings;
 
   // Cumulative Y positions from per-gap spacing, centered at 0.
@@ -4802,11 +4712,14 @@ export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: 
       // "uniform", "box", and "sparkle" all need the wave base geometry
       // available: uniform renders it, box uses it as a placement plane, and
       // sparkle uses it as the surface the sparkle carves a hole through.
-      if (concept === "uniform" || concept === "box" || concept === "sparkle") {
+      if (concept === "uniform" || concept === "box" || concept === "sparkle" || concept === "pavilions") {
         // Sparkle layers get an extra amplitude multiplier so the wave that
-        // carries the hole can be dialed independently.
+        // carries the hole can be dialed independently. Pavilion layers use a
+        // perfectly flat base so the plaza reads as a plinth, not a wave.
         const conceptAmp =
-          concept === "sparkle" ? amp * (sparkleWaveHeight / 100) : amp;
+          concept === "sparkle" ? amp * (sparkleWaveHeight / 100)
+            : concept === "pavilions" ? 0
+            : amp;
         out.push(
           buildLayer(
             planeSize,
@@ -4987,6 +4900,16 @@ export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: 
           (layerEscapeHeight[i] ?? 0) * 0.05 * (cloudHeight / 100),
         );
       }
+      if (concept === "pavilions") {
+        // Pavilion prism top plus label gap and label height. Keeps the
+        // frame from clipping the capability labels.
+        contentAbove = Math.max(
+          contentAbove,
+          planeSize * (pavilionHeight / 100) +
+            planeSize * (pavilionLabelGap / 100) +
+            planeSize * (contentSize * 0.00005),
+        );
+      }
 
       const yShifted = yPositions[i] ?? 0;
       peakAbove = Math.max(
@@ -5011,6 +4934,9 @@ export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: 
     contentSize,
     yPositions,
     totalHeight,
+    planeSize,
+    pavilionHeight,
+    pavilionLabelGap,
   ]);
 
   const framePad = framePadding * 0.03;
@@ -5115,6 +5041,10 @@ export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: 
 
   return (
     <>
+      {/* Depth fog in the background color — distant strata haze out so the
+       * near layers read as the focal depth. Range tuned to the default
+       * camera distance (~45 units) so the stack itself stays clear. */}
+      <fog attach="fog" args={[settings.backgroundColor, 38, 95]} />
       <group>
         {layers.map((layer, idx) => {
           const t = layerCount === 1 ? 0 : idx / (layerCount - 1);
@@ -5124,13 +5054,15 @@ export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: 
           const isAgent = concept === "agent";
           const isSparkle = concept === "sparkle";
           const isTerrain = concept === "terrain";
+          const isPavilions = concept === "pavilions";
           const isConceptMesh =
             concept !== "uniform" &&
             concept !== "box" &&
             concept !== "cloud" &&
             concept !== "agent" &&
             concept !== "sparkle" &&
-            concept !== "terrain";
+            concept !== "terrain" &&
+            concept !== "pavilions";
           const contentColor = layerColors[idx] || meshColor;
           const rawContentType = (layerContent[idx] ?? "none") as ContentType;
           const effectiveContentType: ContentType = isBox
@@ -5139,7 +5071,9 @@ export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: 
           const content = isBox
             ? boxContentByLayer[idx]
             : contentByLayer[idx];
-          // Sparkle owns its complete slab and cutout geometry.
+          // Sparkle owns its complete slab and cutout geometry. Pavilion
+          // layers skip the wire plaza — the three slabs sit directly at the
+          // layer Y with nothing beneath them.
           const showBaseMesh =
             concept === "uniform" || isBox;
           const hasContentOnTop =
@@ -5149,12 +5083,22 @@ export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: 
             : undefined;
           return (
             <group key={idx}>
-              <LayerNameLabel
-                referenceHeight={labelReferenceHeight}
-                fontSize={settings.layerLabelFontSize}
-                name={settings.layerNames[idx]?.trim() || `Layer ${idx + 1}`}
+              {!isPavilions && (
+                <LayerNameLabel
+                  referenceHeight={labelReferenceHeight}
+                  fontSize={settings.layerLabelFontSize}
+                  name={settings.layerNames[idx]?.trim() || `Layer ${idx + 1}`}
+                  layerY={layer.y}
+                  planeSize={planeSize}
+                />
+              )}
+              <LayerGlass
                 layerY={layer.y}
                 planeSize={planeSize}
+                opacity={(layerBgOpacity[idx] ?? 0) / 100}
+                blur={(layerBgBlur[idx] ?? 40) / 100}
+                transmission={(layerBgTransmission[idx] ?? 20) / 100}
+                tint={layerBgColor[idx] || layerColors[idx] || meshColor}
               />
               {showBaseMesh && (
                 <WireLayer
@@ -5281,6 +5225,18 @@ export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: 
                   sharedUniforms={sharedUniforms}
                 />
               )}
+              {isPavilions && (
+                <PavilionsLayer
+                  layerY={layer.y}
+                  planeSize={planeSize}
+                  gutter={pavilionGutter}
+                  rowSplit={pavilionRowSplit}
+                  backSplit={pavilionBackSplit}
+                  height={pavilionHeight}
+                  labelGap={pavilionLabelGap}
+                  pavilions={settings.pavilions}
+                />
+              )}
               {!isConceptMesh && content && content.positions.length > 0 && (
                 <LayerContent
                   type={effectiveContentType}
@@ -5378,34 +5334,16 @@ export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: 
               />
             </>
           )}
-        {sparkleGlass && !frameGlass && layerConcept.slice(0, layerCount).includes("sparkle") && (
-          <Environment resolution={256} frames={1}>
-            <Lightformer position={[0, 8, 0]} scale={[12, 5]} intensity={4} />
-            <Lightformer position={[-8, 3, 5]} scale={[3, 10]} intensity={5} />
-            <Lightformer position={[7, 2, -5]} scale={[2, 10]} intensity={6} color="#dce8ff" />
-            <Lightformer position={[0, -5, 4]} scale={[10, 3]} intensity={2} color="#fff0da" />
-          </Environment>
-        )}
-        {frameGlass && (
-          <>
-            <Environment preset={frameGlassEnv as GlassEnv} />
-            <FrameGlass
-              shape={frameShape}
-              size={frameSize}
-              height={frameHeight}
-              tint={frameGlassTint}
-              roughness={frameGlassRoughness}
-              ior={frameGlassIOR}
-              thickness={frameGlassThickness}
-              chromatic={frameGlassChromatic}
-              anisotropy={frameGlassAnisotropy}
-              distortion={frameGlassDistortion}
-              attenuation={frameGlassAttenuation}
-              backside={frameGlassBackside}
-            />
-          </>
-        )}
-
+        {/* Scene Environment — neutral white lightformers at modest intensity.
+         * Gives glass / PBR materials something to reflect WITHOUT tinting
+         * the layers below with colored light. Each layer's own color comes
+         * from its material / emissive — not from env map tint. */}
+        <Environment resolution={256} frames={1}>
+          <Lightformer position={[0, 10, 0]} scale={[14, 5]} intensity={1.4} color="#ffffff" />
+          <Lightformer position={[-10, 4, 6]} scale={[3, 10]} intensity={1.1} color="#ffffff" />
+          <Lightformer position={[9, 3, -6]} scale={[3, 10]} intensity={1.1} color="#ffffff" />
+          <Lightformer position={[0, -6, 5]} scale={[12, 3]} intensity={0.6} color="#ffffff" />
+        </Environment>
         <mesh
           ref={pointerPlaneRef}
           onPointerMove={onCursorMove}
@@ -5421,32 +5359,25 @@ export function MeshStrataScene({ settings, labelReferenceHeight }: { settings: 
         </mesh>
       </group>
 
+      {/* ALL post-fx mount together or not at all. Toggling a single effect's
+       * intensity to 0 must never change the composer's children — that would
+       * rebuild its pipeline and interrupt the frame loop (which stops
+       * OrbitControls damping / autoRotate). `multisampling: 0` because MSAA
+       * conflicts with DepthOfField's render target. */}
       {(layerBlur > 0 || bloomIntensity > 0 || vignette > 0) && (
-        <EffectComposer multisampling={8}>
-          {layerBlur > 0 ? (
-            <DepthOfField
-              focusDistance={blurFocus / 100}
-              focalLength={blurRange / 200}
-              bokehScale={(layerBlur / 100) * 6}
-            />
-          ) : (
-            <></>
-          )}
-          {bloomIntensity > 0 ? (
-            <Bloom
-              intensity={bloomIntensity / 80}
-              luminanceThreshold={bloomThreshold / 100}
-              luminanceSmoothing={bloomSmoothing / 100}
-              mipmapBlur
-            />
-          ) : (
-            <></>
-          )}
-          {vignette > 0 ? (
-            <Vignette eskil={false} offset={0.2} darkness={vignette / 100} />
-          ) : (
-            <></>
-          )}
+        <EffectComposer multisampling={0}>
+          <DepthOfField
+            focusDistance={blurFocus / 100}
+            focalLength={blurRange / 1500}
+            bokehScale={(layerBlur / 100) * 4}
+          />
+          <Bloom
+            intensity={bloomIntensity / 80}
+            luminanceThreshold={bloomThreshold / 100}
+            luminanceSmoothing={bloomSmoothing / 100}
+            mipmapBlur
+          />
+          <Vignette eskil={false} offset={0.2} darkness={vignette / 100} />
         </EffectComposer>
       )}
     </>

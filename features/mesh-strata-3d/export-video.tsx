@@ -7,7 +7,6 @@ import * as THREE from "three";
 import { BufferTarget, CanvasSource, getFirstEncodableVideoCodec, Output, Quality, Mp4OutputFormat, WebMOutputFormat } from "mediabunny";
 import { MeshStrataScene } from "./scene";
 import { loadVioletFont } from "./layer-name-label";
-import { drawCalloutsOnCanvas } from "./callout-draw";
 import type { StrataSettings } from "./defaults";
 import { videoDimensions, videoResolutions, type ExportCamera, type VideoExportOptions } from "./export-options";
 import { getVideoTiming } from "./export-timing";
@@ -96,14 +95,7 @@ export async function exportStrataVideo(settings: StrataSettings, camera: Export
     state.advance(0);
     state.advance(0);
     await abortable(state.gl.compileAsync(state.scene, state.camera), signal);
-    // Compositing canvas: receives the WebGL frame plus the HTML callout
-    // overlay drawn each frame so exports include the badges and lines.
-    const composite = document.createElement("canvas");
-    composite.width = width;
-    composite.height = height;
-    const compositeCtx = composite.getContext("2d");
-    if (!compositeCtx) throw new Error("This browser could not create a 2D canvas for the export compositor.");
-    source = new CanvasSource(composite, { codec, quality });
+    source = new CanvasSource(canvas, { codec, quality });
     output.addVideoTrack(source, { frameRate: options.fps });
     await output.start();
     // Capture [0, N): the conceptual frame N matches frame 0. Keep all N frames
@@ -113,9 +105,6 @@ export async function exportStrataVideo(settings: StrataSettings, camera: Export
       signal.throwIfAborted();
       setCameraFrame(frame);
       state.advance(frame / options.fps);
-      compositeCtx.clearRect(0, 0, width, height);
-      compositeCtx.drawImage(canvas, 0, 0, width, height);
-      drawCalloutsOnCanvas(compositeCtx, width, height, settings, state.camera);
       await source.add(frame / options.fps, 1 / options.fps);
       onProgress((frame + 1) / frames * 0.95);
       // Yield to Cancel/progress UI, even when the encoder has spare capacity.

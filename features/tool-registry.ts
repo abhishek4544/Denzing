@@ -12,25 +12,11 @@ export type ToolDefinition = {
  */
 export const tools: readonly ToolDefinition[] = [
   {
-    id: "ontology-explorer-3d",
-    label: "Ontology Explorer 3D",
-    description:
-      "Hyper-realistic 3D node-link view of the Revenue ontology fixture.",
-    href: "/tools/ontology-explorer-3d",
-  },
-  {
     id: "mesh-strata-3d",
     label: "Mesh Strata 3D",
     description:
       "Stacked wireframe wave layers with a crimson core in a gold cube frame.",
     href: "/tools/mesh-strata-3d",
-  },
-  {
-    id: "mesh-strata-3d-lab",
-    label: "Mesh Strata Lab",
-    description:
-      "Experimental variant of Mesh Strata 3D for in-progress content types.",
-    href: "/tools/mesh-strata-3d-lab",
   },
   {
     id: "security-grid-3d",
@@ -45,6 +31,20 @@ export const tools: readonly ToolDefinition[] = [
     description:
       "Autonomous agents workspace; starts from the Mesh Strata 3D template and will diverge over time.",
     href: "/tools/autonomous-agents-3d",
+  },
+  {
+    id: "autonomous-agents-3d-lab",
+    label: "Autonomous Agents Lab",
+    description:
+      "Flat convergence → decision → fanout diagram for Denzing autonomous agents; experimental sibling of Autonomous Agents 3D.",
+    href: "/tools/autonomous-agents-3d-lab",
+  },
+  {
+    id: "agentic-architecture",
+    label: "Agentic Architecture",
+    description:
+      "Vertical exploded-isometric diagram: People, Platforms, Systems — three stacked wireframe modules with a red agentic infrastructure core.",
+    href: "/tools/agentic-architecture",
   },
 ];
 

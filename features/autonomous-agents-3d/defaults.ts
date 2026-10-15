@@ -153,10 +153,6 @@ export type StrataSettings = {
   agentLayerCount: number;
   agentLayerSpacing: number;
   agentLayerStagger: number;
-  agentDotCount: number;
-  agentDotColor: string;
-  agentDotSize: number;
-  agentDotOpacity: number;
   layerCount: number;
   /** Per-gap spacing between consecutive layers (length = MAX_LAYERS - 1). */
   layerGaps: number[];
@@ -482,6 +478,52 @@ export type StrataSettings = {
   calloutYourOwnAiTrunkX: number;
   calloutYourOwnAiLineDown: number;
   calloutYourOwnAiBendLeft: number;
+
+  /** Hyper-realism controls — always-on tone mapping, HDRI, AO, lighting rig, lens effects. */
+  realismEnabled: boolean;
+  toneMappingExposure: number;        // 0..200 → 0..2.0 (multiplier on 1.0 base)
+  hdriEnabled: boolean;
+  hdriPreset: GlassEnv;
+  hdriIntensity: number;              // 0..200 → 0..2.0
+  hdriBackground: boolean;            // if true, HDRI shows as background too
+  aoEnabled: boolean;
+  aoIntensity: number;                // 0..200 → 0..4.0
+  aoRadius: number;                   // 0..100 → 0..2.0 (world units)
+  aoAperture: number;                 // 0..100 → 0..1.0 (how much it reads non-contact occlusion)
+  keyLightIntensity: number;          // 0..300 → 0..3.0
+  fillLightIntensity: number;         // 0..300 → 0..3.0
+  rimLightIntensity: number;          // 0..300 → 0..3.0
+  keyLightColor: string;
+  rimLightColor: string;
+  filmGrain: number;                  // 0..100 → 0..0.25
+  /** Global multiplier (0..100) applied to every outline/line opacity in the scene. */
+  globalLineOpacity: number;
+
+  /** Outcome badges — rendered as an HTML overlay on the right of the canvas. */
+  outcomesEnabled: boolean;
+  outcomeLabels: string[];
+  outcomeRightPct: number;    // 0..100 — right edge of the stack as % of canvas width
+  outcomeTopPct: number;      // 0..100 — top of the first badge as % of canvas height
+  outcomeSpacingPct: number;  // 0..40 — vertical gap between badges as % of canvas height
+  outcomeFontSize: number;    // px
+  outcomeFg: string;          // label text color
+  /** Thin 3D connector lines from the center slabs out to just past the right
+   *  wall, one per outcome label. */
+  outcomeConnectorsEnabled: boolean;
+  outcomeConnectorColor: string;
+  outcomeConnectorThickness: number;  // cylinder radius in world units
+  outcomeConnectorOpacity: number;
+
+  verticalSlabsEnabled: boolean;
+  verticalSlabCount: number;
+  verticalSlabCenterXPct: number;      // 0..100 — center of slab zone as % of enclosureWidth
+  verticalSlabZoneWidthPct: number;    // how wide the cluster of slabs is, % of W
+  verticalSlabHeightPct: number;       // % of enclosureHeight
+  verticalSlabDepthPct: number;        // % of enclosureDepth
+  verticalSlabThickness: number;       // X thickness in world units
+  verticalSlabColor: string;
+  verticalSlabOpacity: number;
+  verticalSlabGridResolution: number;
 };
 
 /** Scene-space Y of the top layer. Mirrors the stack layout in `scene.tsx`. */
@@ -501,63 +543,59 @@ export const defaultStrataSettings: StrataSettings = {
   canvasAspect: "auto",
   canvasAspectWidth: 16,
   canvasAspectHeight: 9,
-  enclosureWidth: 7.2,
-  enclosureHeight: 15,
-  enclosureDepth: 4.4,
-  enclosureRings: 14,
+  enclosureWidth: 20,
+  enclosureHeight: 10,
+  enclosureDepth: 10,
+  enclosureRings: 6,
   coreCubeWidth: 1.6,
   coreCubeHeight: 1.6,
   coreCubeDepth: 1.6,
   coreCubeFloorPadding: 7,
-  lineCount: 220,
-  lineColor: "#c3ffe0",
-  lineAnimationSpeed: 50,
-  lineBottomDensity: 72,
-  lineBottomSpread: 55,
-  lineTopExitCount: 4,
+  lineCount: 520,
+  lineColor: "#02c05e",
+  lineAnimationSpeed: 59,
+  lineBottomDensity: 0,
+  lineBottomSpread: 180,
+  lineTopExitCount: 0,
   lineTopExitColor: "#f5ffce",
-  lineFlowDensity: 6,
-  lineFlowDuty: 32,
-  lineTopFade: 12,
-  lineBottomFade: 16,
-  topPipeRadius: 0.09,
-  topPipeOpacity: 28,
-  topBubbleCount: 18,
-  topBubbleSize: 55,
+  lineFlowDensity: 15,
+  lineFlowDuty: 26,
+  lineTopFade: 37,
+  lineBottomFade: 5,
+  topPipeRadius: 0.075,
+  topPipeOpacity: 14,
+  topBubbleCount: 9,
+  topBubbleSize: 10,
   topInnerColor: "#ffffff",
   topInnerOpacity: 55,
-  topInnerThickness: 22,
-  topInnerFlowSpeed: 100,
+  topInnerThickness: 0,
+  topInnerFlowSpeed: 128,
   topInnerFlowDensity: 5,
-  gridResolution: 20,
+  gridResolution: 25,
   gridColor: "#ffffff",
-  gridOpacity: 16,
-  gridPadding: 4,
-  basePlaneColor: "#0b200f",
-  basePlaneOpacity: 8,
-  floorSize: 32,
+  gridOpacity: 8,
+  gridPadding: 0,
+  basePlaneColor: "#000000",
+  basePlaneOpacity: 10,
+  floorSize: 14,
   floorCells: 40,
   floorEdgeFade: 76,
-  floorEdgeIntensity: 157,
-  floorOpacityNear: 13,
-  floorOpacityFar: 19,
+  floorEdgeIntensity: 150,
+  floorOpacityNear: 9,
+  floorOpacityFar: 12,
   floorGridColor: "#ffffff",
-  zeroNodeCount: 60,
+  zeroNodeCount: 157,
   zeroNodeColor: "#ffffff",
-  zeroNodeSize: 50,
-  zeroNodeOpacity: 85,
+  zeroNodeSize: 54,
+  zeroNodeOpacity: 12,
   zeroNodeRadius: 70,
-  enclosureLineOpacity: 72,
-  agentEnabled: true,
-  agentLayerY: 3,
-  agentSize: 6,
-  agentLayerCount: 3,
-  agentLayerSpacing: 0.6,
-  agentLayerStagger: 0,
-  agentDotCount: 320,
-  agentDotColor: "#ffffff",
-  agentDotSize: 32,
-  agentDotOpacity: 28,
+  enclosureLineOpacity: 9,
+  agentEnabled: false,
+  agentLayerY: 0.5,
+  agentSize: 9.4,
+  agentLayerCount: 4,
+  agentLayerSpacing: 0.7,
+  agentLayerStagger: 49,
   layerCount: 5,
   layerGaps: [108,91,91,80,62,62,62,62,62,62,62,62,62],
   layerColors: ["#9897f2","#f1e9da","#f9f0e1","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c","#ffc35c"],
@@ -579,16 +617,16 @@ export const defaultStrataSettings: StrataSettings = {
   escapeSpeed: 100,
   escapeJitter: 100,
 
-  agentGridN: 24,
-  agentNodeSize: 15,
-  agentEdgeOpacity: 23,
-  agentSignalCount: 274,
-  agentSignalSpeed: 200,
-  agentSignalLength: 43,
-  agentSignalThickness: 3,
+  agentGridN: 32,
+  agentNodeSize: 12,
+  agentEdgeOpacity: 22,
+  agentSignalCount: 571,
+  agentSignalSpeed: 261,
+  agentSignalLength: 42,
+  agentSignalThickness: 7,
   agentSignalColor: "#ffffff",
   agentNodeColor: "#ffffff",
-  agentDecayLength: 100,
+  agentDecayLength: 59,
   agentRefractory: 95,
   agentJunctionSplit: false,
   agentSpawnRate: 100,
@@ -738,7 +776,7 @@ export const defaultStrataSettings: StrataSettings = {
   idleScale: 42,
   idleSpeed: 30,
 
-  autoRotate: true,
+  autoRotate: false,
   rotateSpeed: 21,
   fov: 29,
   isoView: false,
@@ -764,4 +802,45 @@ export const defaultStrataSettings: StrataSettings = {
   calloutYourOwnAiTrunkX: 99,
   calloutYourOwnAiLineDown: 22,
   calloutYourOwnAiBendLeft: 0,
+
+  realismEnabled: true,
+  toneMappingExposure: 100,
+  hdriEnabled: true,
+  hdriPreset: "studio",
+  hdriIntensity: 55,
+  hdriBackground: false,
+  aoEnabled: true,
+  aoIntensity: 70,
+  aoRadius: 30,
+  aoAperture: 25,
+  keyLightIntensity: 120,
+  fillLightIntensity: 55,
+  rimLightIntensity: 85,
+  keyLightColor: "#fff5e6",
+  rimLightColor: "#8fb6ff",
+  filmGrain: 22,
+  globalLineOpacity: 100,
+
+  outcomesEnabled: true,
+  outcomeLabels: ["NOTIFY BUYER", "FLAG SUPPLIER", "HOLD PRICE", "REORDER"],
+  outcomeRightPct: 6,
+  outcomeTopPct: 32,
+  outcomeSpacingPct: 12,
+  outcomeFontSize: 18,
+  outcomeFg: "#ffffff",
+  outcomeConnectorsEnabled: true,
+  outcomeConnectorColor: "#ffffff",
+  outcomeConnectorThickness: 0.06,
+  outcomeConnectorOpacity: 95,
+
+  verticalSlabsEnabled: true,
+  verticalSlabCount: 4,
+  verticalSlabCenterXPct: 50,
+  verticalSlabZoneWidthPct: 6,
+  verticalSlabHeightPct: 92,
+  verticalSlabDepthPct: 85,
+  verticalSlabThickness: 0.12,
+  verticalSlabColor: "#f4f6ff",
+  verticalSlabOpacity: 55,
+  verticalSlabGridResolution: 24,
 };

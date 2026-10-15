@@ -13,6 +13,7 @@ import {
   createCalloutBridgeRef,
 } from "./callout-overlay";
 import { RendererDiagnostics } from "./renderer-diagnostics";
+import { OutcomesOverlay } from "./outcomes-overlay";
 
 function Runtime({ settings, active }: { settings: StrataSettings; active: boolean }) {
   const get = useThree((state) => state.get);
@@ -85,6 +86,7 @@ export default function MeshStrataViewer({ settings = defaultStrataSettings,
       {settings.showCallouts && <CalloutAnchorTracker bridgeRef={bridgeRef} anchors={anchorSpecs} />}
     </Canvas>
     {settings.showCallouts && <CalloutOverlay bridgeRef={bridgeRef} settings={settings} />}
+    <OutcomesOverlay settings={settings} />
     </div>
   </div>;
 }

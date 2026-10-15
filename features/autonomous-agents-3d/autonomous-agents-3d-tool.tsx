@@ -12,6 +12,7 @@ import {
   SectionButton,
   SelectField,
   SliderField,
+  TextField,
   ToggleField,
   ToolShell,
 } from "@/components/tool-shell";
@@ -20,10 +21,13 @@ import { tools } from "@/features/tool-registry";
 import {
   defaultStrataSettings,
   canvasAspectOptions,
+  glassEnvOptions,
   type StrataSettings,
   type CanvasAspect,
+  type GlassEnv,
 } from "./defaults";
-import { AutonomousAgentsGenerativeScene } from "./generative-scene";
+import { AutonomousAgentsGenerativeScene, realismFromSettings } from "./generative-scene";
+import { OutcomesOverlay } from "./outcomes-overlay";
 import { validateStrataPreset } from "./validate-preset";
 import { CustomAspectDialog } from "./custom-aspect-dialog";
 import { exportStrataScene } from "./export-image";
@@ -156,7 +160,7 @@ export function AutonomousAgents3DTool() {
             topInnerFlowDensity={settings.topInnerFlowDensity}
             gridResolution={settings.gridResolution}
             gridColor={settings.gridColor}
-            gridOpacity={settings.gridOpacity}
+            gridOpacity={settings.gridOpacity * (settings.globalLineOpacity / 100)}
             gridPadding={settings.gridPadding}
             basePlaneColor={settings.basePlaneColor}
             basePlaneOpacity={settings.basePlaneOpacity}
@@ -164,25 +168,21 @@ export function AutonomousAgents3DTool() {
             floorCells={settings.floorCells}
             floorEdgeFade={settings.floorEdgeFade}
             floorEdgeIntensity={settings.floorEdgeIntensity}
-            floorOpacityNear={settings.floorOpacityNear}
-            floorOpacityFar={settings.floorOpacityFar}
+            floorOpacityNear={settings.floorOpacityNear * (settings.globalLineOpacity / 100)}
+            floorOpacityFar={settings.floorOpacityFar * (settings.globalLineOpacity / 100)}
             floorGridColor={settings.floorGridColor}
             zeroNodeCount={settings.zeroNodeCount}
             zeroNodeColor={settings.zeroNodeColor}
             zeroNodeSize={settings.zeroNodeSize}
             zeroNodeOpacity={settings.zeroNodeOpacity}
             zeroNodeRadius={settings.zeroNodeRadius}
-            enclosureLineOpacity={settings.enclosureLineOpacity}
+            enclosureLineOpacity={settings.enclosureLineOpacity * (settings.globalLineOpacity / 100)}
             agentEnabled={settings.agentEnabled}
             agentLayerY={settings.agentLayerY}
             agentSize={settings.agentSize}
             agentLayerCount={settings.agentLayerCount}
             agentLayerSpacing={settings.agentLayerSpacing}
             agentLayerStagger={settings.agentLayerStagger}
-            agentDotCount={settings.agentDotCount}
-            agentDotColor={settings.agentDotColor}
-            agentDotSize={settings.agentDotSize}
-            agentDotOpacity={settings.agentDotOpacity}
             agentGridN={settings.agentGridN}
             agentNodeSize={settings.agentNodeSize}
             agentEdgeOpacity={settings.agentEdgeOpacity}
@@ -196,8 +196,11 @@ export function AutonomousAgents3DTool() {
             agentRefractory={settings.agentRefractory}
             agentSpawnRate={settings.agentSpawnRate}
             agentMinAmplitude={settings.agentMinAmplitude}
+            realism={realismFromSettings(settings)}
+            outcomes={settings}
             controlsRef={orbitControlsRef}
           />
+          <OutcomesOverlay settings={settings} />
         </div>
       </CanvasArea>
 
@@ -229,6 +232,289 @@ export function AutonomousAgents3DTool() {
               Upload
             </SectionButton>
           </div>
+        </Section>
+
+        <Section title="Realism">
+          <ToggleField
+            size="compact"
+            label="Enabled"
+            checked={settings.realismEnabled}
+            onCheckedChange={(v) => update("realismEnabled", v)}
+          />
+          <SliderField
+            label="Exposure"
+            value={settings.toneMappingExposure}
+            min={30}
+            max={200}
+            step={1}
+            onChange={(v) => update("toneMappingExposure", v)}
+          />
+          <ToggleField
+            size="compact"
+            label="HDRI"
+            checked={settings.hdriEnabled}
+            onCheckedChange={(v) => update("hdriEnabled", v)}
+          />
+          <SelectField
+            label="HDRI Preset"
+            value={settings.hdriPreset}
+            onChange={(v) => update("hdriPreset", v as GlassEnv)}
+            options={glassEnvOptions.map((o) => ({ value: o.value, label: o.label }))}
+          />
+          <SliderField
+            label="HDRI Intensity"
+            value={settings.hdriIntensity}
+            min={0}
+            max={200}
+            onChange={(v) => update("hdriIntensity", v)}
+          />
+          <ToggleField
+            size="compact"
+            label="HDRI as Background"
+            checked={settings.hdriBackground}
+            onCheckedChange={(v) => update("hdriBackground", v)}
+          />
+          <ToggleField
+            size="compact"
+            label="Ambient Occlusion"
+            checked={settings.aoEnabled}
+            onCheckedChange={(v) => update("aoEnabled", v)}
+          />
+          <SliderField
+            label="AO Intensity"
+            value={settings.aoIntensity}
+            min={0}
+            max={200}
+            onChange={(v) => update("aoIntensity", v)}
+          />
+          <SliderField
+            label="AO Radius"
+            value={settings.aoRadius}
+            min={0}
+            max={100}
+            onChange={(v) => update("aoRadius", v)}
+          />
+          <SliderField
+            label="AO Aperture"
+            value={settings.aoAperture}
+            min={0}
+            max={100}
+            onChange={(v) => update("aoAperture", v)}
+          />
+          <SliderField
+            label="Key Light"
+            value={settings.keyLightIntensity}
+            min={0}
+            max={300}
+            onChange={(v) => update("keyLightIntensity", v)}
+          />
+          <ColorField
+            label="Key Color"
+            color={settings.keyLightColor}
+            opacity={100}
+            onColorChange={(v) => update("keyLightColor", v)}
+            onOpacityChange={() => {}}
+            showPipette={false}
+          />
+          <SliderField
+            label="Fill Light"
+            value={settings.fillLightIntensity}
+            min={0}
+            max={300}
+            onChange={(v) => update("fillLightIntensity", v)}
+          />
+          <SliderField
+            label="Rim Light"
+            value={settings.rimLightIntensity}
+            min={0}
+            max={300}
+            onChange={(v) => update("rimLightIntensity", v)}
+          />
+          <ColorField
+            label="Rim Color"
+            color={settings.rimLightColor}
+            opacity={100}
+            onColorChange={(v) => update("rimLightColor", v)}
+            onOpacityChange={() => {}}
+            showPipette={false}
+          />
+          <SliderField
+            label="Film Grain"
+            value={settings.filmGrain}
+            min={0}
+            max={100}
+            onChange={(v) => update("filmGrain", v)}
+          />
+          <SliderField
+            label="Line Opacity (global)"
+            value={settings.globalLineOpacity}
+            min={0}
+            max={100}
+            onChange={(v) => update("globalLineOpacity", v)}
+          />
+        </Section>
+
+        <Section title="Outcomes">
+          <ToggleField
+            size="compact"
+            label="Enabled"
+            checked={settings.outcomesEnabled}
+            onCheckedChange={(v) => update("outcomesEnabled", v)}
+          />
+          {settings.outcomeLabels.map((label, i) => (
+            <TextField
+              key={`outcome-${i}`}
+              label={`Outcome ${i + 1}`}
+              value={label}
+              onChange={(v) => {
+                const next = settings.outcomeLabels.slice();
+                next[i] = v;
+                update("outcomeLabels", next);
+              }}
+            />
+          ))}
+          <SliderField
+            label="Right Offset %"
+            value={settings.outcomeRightPct}
+            min={0}
+            max={40}
+            step={0.5}
+            onChange={(v) => update("outcomeRightPct", v)}
+          />
+          <SliderField
+            label="Top Offset %"
+            value={settings.outcomeTopPct}
+            min={0}
+            max={80}
+            step={0.5}
+            onChange={(v) => update("outcomeTopPct", v)}
+          />
+          <SliderField
+            label="Spacing %"
+            value={settings.outcomeSpacingPct}
+            min={2}
+            max={30}
+            step={0.5}
+            onChange={(v) => update("outcomeSpacingPct", v)}
+          />
+          <SliderField
+            label="Font Size"
+            value={settings.outcomeFontSize}
+            min={8}
+            max={32}
+            step={1}
+            onChange={(v) => update("outcomeFontSize", v)}
+          />
+          <ColorField
+            label="Text"
+            color={settings.outcomeFg}
+            opacity={100}
+            onColorChange={(v) => update("outcomeFg", v)}
+            onOpacityChange={() => {}}
+            showPipette={false}
+          />
+          <ToggleField
+            size="compact"
+            label="Connector Lines"
+            checked={settings.outcomeConnectorsEnabled}
+            onCheckedChange={(v) => update("outcomeConnectorsEnabled", v)}
+          />
+          <ColorField
+            label="Connector Color"
+            color={settings.outcomeConnectorColor}
+            opacity={100}
+            onColorChange={(v) => update("outcomeConnectorColor", v)}
+            onOpacityChange={() => {}}
+            showPipette={false}
+          />
+          <SliderField
+            label="Connector Thickness"
+            value={settings.outcomeConnectorThickness}
+            min={0.01}
+            max={0.4}
+            step={0.005}
+            onChange={(v) => update("outcomeConnectorThickness", v)}
+          />
+          <SliderField
+            label="Connector Opacity"
+            value={settings.outcomeConnectorOpacity}
+            min={0}
+            max={100}
+            onChange={(v) => update("outcomeConnectorOpacity", v)}
+          />
+        </Section>
+
+        <Section title="Vertical Slabs">
+          <ToggleField
+            size="compact"
+            label="Enabled"
+            checked={settings.verticalSlabsEnabled}
+            onCheckedChange={(v) => update("verticalSlabsEnabled", v)}
+          />
+          <SliderField
+            label="Count"
+            value={settings.verticalSlabCount}
+            min={1}
+            max={10}
+            step={1}
+            onChange={(v) => update("verticalSlabCount", v)}
+          />
+          <SliderField
+            label="Center X %"
+            value={settings.verticalSlabCenterXPct}
+            min={0}
+            max={100}
+            step={0.5}
+            onChange={(v) => update("verticalSlabCenterXPct", v)}
+          />
+          <SliderField
+            label="Zone Width %"
+            value={settings.verticalSlabZoneWidthPct}
+            min={0}
+            max={30}
+            step={0.5}
+            onChange={(v) => update("verticalSlabZoneWidthPct", v)}
+          />
+          <SliderField
+            label="Height %"
+            value={settings.verticalSlabHeightPct}
+            min={10}
+            max={100}
+            step={1}
+            onChange={(v) => update("verticalSlabHeightPct", v)}
+          />
+          <SliderField
+            label="Depth %"
+            value={settings.verticalSlabDepthPct}
+            min={10}
+            max={100}
+            step={1}
+            onChange={(v) => update("verticalSlabDepthPct", v)}
+          />
+          <SliderField
+            label="Thickness"
+            value={settings.verticalSlabThickness}
+            min={0.02}
+            max={1}
+            step={0.01}
+            onChange={(v) => update("verticalSlabThickness", v)}
+          />
+          <ColorField
+            label="Color"
+            color={settings.verticalSlabColor}
+            opacity={settings.verticalSlabOpacity}
+            onColorChange={(v) => update("verticalSlabColor", v)}
+            onOpacityChange={(v) => update("verticalSlabOpacity", v)}
+            showPipette={false}
+          />
+          <SliderField
+            label="Grid Resolution"
+            value={settings.verticalSlabGridResolution}
+            min={2}
+            max={60}
+            step={1}
+            onChange={(v) => update("verticalSlabGridResolution", v)}
+          />
         </Section>
 
         <Section title="Camera">
@@ -373,24 +659,8 @@ export function AutonomousAgents3DTool() {
             label="Bottom Spread"
             value={settings.lineBottomSpread}
             min={0}
-            max={100}
+            max={250}
             onChange={(v) => update("lineBottomSpread", v)}
-          />
-          <SliderField
-            label="Top Exit Lines"
-            value={settings.lineTopExitCount}
-            min={1}
-            max={12}
-            step={1}
-            onChange={(v) => update("lineTopExitCount", v)}
-          />
-          <ColorField
-            label="Top Exit Color"
-            color={settings.lineTopExitColor}
-            opacity={100}
-            onColorChange={(v) => update("lineTopExitColor", v)}
-            onOpacityChange={() => {}}
-            showPipette={false}
           />
           <SliderField
             label="Flow Density"
@@ -420,66 +690,6 @@ export function AutonomousAgents3DTool() {
             min={0}
             max={50}
             onChange={(v) => update("lineBottomFade", v)}
-          />
-          <SliderField
-            label="Pipe Radius"
-            value={settings.topPipeRadius}
-            min={0.02}
-            max={0.5}
-            step={0.005}
-            onChange={(v) => update("topPipeRadius", v)}
-          />
-          <SliderField
-            label="Pipe Opacity"
-            value={settings.topPipeOpacity}
-            min={0}
-            max={100}
-            onChange={(v) => update("topPipeOpacity", v)}
-          />
-          <SliderField
-            label="Bubbles / Pipe"
-            value={settings.topBubbleCount}
-            min={0}
-            max={80}
-            step={1}
-            onChange={(v) => update("topBubbleCount", v)}
-          />
-          <SliderField
-            label="Bubble Size"
-            value={settings.topBubbleSize}
-            min={10}
-            max={150}
-            onChange={(v) => update("topBubbleSize", v)}
-          />
-          <ColorField
-            label="Inner Beam Color"
-            color={settings.topInnerColor}
-            opacity={settings.topInnerOpacity}
-            onColorChange={(v) => update("topInnerColor", v)}
-            onOpacityChange={(v) => update("topInnerOpacity", v)}
-            showPipette={false}
-          />
-          <SliderField
-            label="Inner Thickness"
-            value={settings.topInnerThickness}
-            min={0}
-            max={100}
-            onChange={(v) => update("topInnerThickness", v)}
-          />
-          <SliderField
-            label="Inner Flow Speed"
-            value={settings.topInnerFlowSpeed}
-            min={0}
-            max={300}
-            onChange={(v) => update("topInnerFlowSpeed", v)}
-          />
-          <SliderField
-            label="Inner Flow Density"
-            value={settings.topInnerFlowDensity}
-            min={1}
-            max={30}
-            step={1}
-            onChange={(v) => update("topInnerFlowDensity", v)}
           />
         </Section>
 
@@ -602,29 +812,6 @@ export function AutonomousAgents3DTool() {
             min={0}
             max={100}
             onChange={(v) => update("agentLayerStagger", v)}
-          />
-          <SliderField
-            label="Dot Count"
-            value={settings.agentDotCount}
-            min={0}
-            max={2000}
-            step={1}
-            onChange={(v) => update("agentDotCount", v)}
-          />
-          <ColorField
-            label="Dot Color"
-            color={settings.agentDotColor}
-            opacity={settings.agentDotOpacity}
-            onColorChange={(v) => update("agentDotColor", v)}
-            onOpacityChange={(v) => update("agentDotOpacity", v)}
-            showPipette={false}
-          />
-          <SliderField
-            label="Dot Size"
-            value={settings.agentDotSize}
-            min={5}
-            max={120}
-            onChange={(v) => update("agentDotSize", v)}
           />
         </Section>
 

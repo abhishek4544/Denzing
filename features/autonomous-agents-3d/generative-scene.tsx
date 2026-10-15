@@ -3,11 +3,124 @@
 /* eslint-disable react-hooks/immutability -- Three.js uniforms and buffers are
  * intentionally mutated per frame so the preview stays lightweight. */
 
-import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { OutcomeConnectors } from "./outcome-connectors";
+import { VerticalSlabs } from "./vertical-slabs";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Environment, OrbitControls } from "@react-three/drei";
+import {
+  Bloom,
+  EffectComposer,
+  N8AO,
+  Noise,
+  Vignette,
+} from "@react-three/postprocessing";
+import { BlendFunction } from "postprocessing";
 import { useEffect, useMemo, useRef, useState, type ComponentRef, type Ref } from "react";
 import * as THREE from "three";
-import type { StrataSettings } from "./defaults";
+import type { GlassEnv, StrataSettings } from "./defaults";
+
+export type RealismProps = {
+  enabled: boolean;
+  toneMappingExposure: number;
+  hdriEnabled: boolean;
+  hdriPreset: GlassEnv;
+  hdriIntensity: number;
+  hdriBackground: boolean;
+  aoEnabled: boolean;
+  aoIntensity: number;
+  aoRadius: number;
+  aoAperture: number;
+  keyLightIntensity: number;
+  fillLightIntensity: number;
+  rimLightIntensity: number;
+  keyLightColor: string;
+  rimLightColor: string;
+  filmGrain: number;
+  bloomIntensity: number;
+  bloomThreshold: number;
+  bloomSmoothing: number;
+  vignette: number;
+};
+
+function ToneMappingSync({ exposure }: { exposure: number }) {
+  const get = useThree((s) => s.get);
+  useEffect(() => {
+    const g = get().gl;
+    g.toneMapping = THREE.ACESFilmicToneMapping;
+    g.toneMappingExposure = exposure / 100;
+    g.outputColorSpace = THREE.SRGBColorSpace;
+  }, [get, exposure]);
+  return null;
+}
+
+function RealismRig({ realism }: { realism: RealismProps }) {
+  if (!realism.enabled) return null;
+  const hasBloom = realism.bloomIntensity > 0;
+  const hasVignette = realism.vignette > 0;
+  const hasAO = realism.aoEnabled;
+  const hasGrain = realism.filmGrain > 0;
+  return (
+    <>
+      <ToneMappingSync exposure={realism.toneMappingExposure} />
+      {realism.hdriEnabled && (
+        <Environment
+          preset={realism.hdriPreset}
+          resolution={512}
+          background={realism.hdriBackground}
+          environmentIntensity={realism.hdriIntensity / 100}
+        />
+      )}
+      <hemisphereLight args={["#ffffff", "#1a1a24", 0.35]} />
+      <directionalLight
+        position={[8, 12, 6]}
+        intensity={realism.keyLightIntensity / 100}
+        color={realism.keyLightColor}
+      />
+      <directionalLight
+        position={[-10, 6, -4]}
+        intensity={realism.fillLightIntensity / 100}
+        color="#ffffff"
+      />
+      <pointLight
+        position={[0, 6, -14]}
+        intensity={realism.rimLightIntensity / 100}
+        color={realism.rimLightColor}
+        distance={60}
+        decay={2}
+      />
+      {(hasBloom || hasVignette || hasAO || hasGrain) && (
+        <EffectComposer multisampling={4}>
+          {hasAO ? (
+            <N8AO
+              intensity={realism.aoIntensity / 50}
+              aoRadius={realism.aoRadius / 50}
+              distanceFalloff={0.5 + realism.aoAperture / 100}
+              quality="medium"
+            />
+          ) : (
+            <></>
+          )}
+          {hasBloom ? (
+            <Bloom
+              intensity={realism.bloomIntensity / 80}
+              luminanceThreshold={realism.bloomThreshold / 100}
+              luminanceSmoothing={realism.bloomSmoothing / 100}
+              mipmapBlur
+            />
+          ) : (
+            <></>
+          )}
+          {hasGrain ? (
+            <Noise premultiply blendFunction={BlendFunction.SOFT_LIGHT} opacity={realism.filmGrain / 400} />
+          ) : (
+            <></>
+          )}
+          {hasVignette ? <Vignette eskil={false} offset={0.2} darkness={realism.vignette / 100} /> : <></>}
+        </EffectComposer>
+      )}
+    </>
+  );
+}
 
 function makeEnclosureClipPlanes(halfW: number, halfD: number) {
   return [
@@ -15,6 +128,19 @@ function makeEnclosureClipPlanes(halfW: number, halfD: number) {
     new THREE.Plane(new THREE.Vector3(1, 0, 0), halfW),
     new THREE.Plane(new THREE.Vector3(0, 0, -1), halfD),
     new THREE.Plane(new THREE.Vector3(0, 0, 1), halfD),
+  ];
+}
+
+/** 6-sided enclosure clip volume (LRFBTB) — adds top and bottom to the LRFB
+ *  version so content can't spill above the roof or below the floor. */
+function makeEnclosureClipVolume(halfW: number, halfH: number, halfD: number) {
+  return [
+    new THREE.Plane(new THREE.Vector3(-1, 0, 0), halfW),
+    new THREE.Plane(new THREE.Vector3(1, 0, 0), halfW),
+    new THREE.Plane(new THREE.Vector3(0, 0, -1), halfD),
+    new THREE.Plane(new THREE.Vector3(0, 0, 1), halfD),
+    new THREE.Plane(new THREE.Vector3(0, -1, 0), halfH),
+    new THREE.Plane(new THREE.Vector3(0, 1, 0), halfH),
   ];
 }
 
@@ -344,9 +470,10 @@ type FabricThreadsProps = {
   flowDuty: number;
   topFade: number;
   bottomFade: number;
+  clipPlanes?: THREE.Plane[];
 };
 
-function FabricThreads({ count, color, speed, density, spread, cubeWidth, cubeDepth, cubeBottomY, flowDensity, flowDuty, topFade, bottomFade }: FabricThreadsProps) {
+function FabricThreads({ count, color, speed, density, spread, cubeWidth, cubeDepth, cubeBottomY, flowDensity, flowDuty, topFade, bottomFade, clipPlanes }: FabricThreadsProps) {
   const threadCount = Math.max(10, Math.round(count));
   const segments = 20;
   const topY = cubeBottomY;
@@ -412,6 +539,7 @@ function FabricThreads({ count, color, speed, density, spread, cubeWidth, cubeDe
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
+      clipping: true,
       vertexShader: /* glsl */ `
         attribute float aU;
         attribute float aThread;
@@ -419,6 +547,7 @@ function FabricThreads({ count, color, speed, density, spread, cubeWidth, cubeDe
         varying float vPhase;
         varying float vSpeedJitter;
         varying float vFlicker;
+        #include <clipping_planes_pars_vertex>
         void main() {
           vU = aU;
           // Scatter the per-thread phase and give each thread a slightly
@@ -426,7 +555,9 @@ function FabricThreads({ count, color, speed, density, spread, cubeWidth, cubeDe
           vPhase = fract(aThread * 0.173);
           vSpeedJitter = 0.86 + fract(aThread * 0.613) * 0.28;
           vFlicker = fract(aThread * 1.071);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * mvPosition;
+          #include <clipping_planes_vertex>
         }
       `,
       fragmentShader: /* glsl */ `
@@ -440,11 +571,13 @@ function FabricThreads({ count, color, speed, density, spread, cubeWidth, cubeDe
         varying float vPhase;
         varying float vSpeedJitter;
         varying float vFlicker;
+        #include <clipping_planes_pars_fragment>
 
         // Smooth gaussian-ish pulse travelling along the wire. Each wire has its
         // own phase offset + speed jitter so the bundle feels organic rather than
         // metronomic.
         void main() {
+          #include <clipping_planes_fragment>
           float bottom = smoothstep(0.0, max(uBottomFade, 1e-4), vU);
           float top = smoothstep(0.0, max(uTopFade, 1e-4), 1.0 - vU);
           float fade = bottom * top;
@@ -473,8 +606,9 @@ function FabricThreads({ count, color, speed, density, spread, cubeWidth, cubeDe
         }
       `,
     });
+    mat.clippingPlanes = clipPlanes ?? null;
     return { geometry: geo, seeds: seedList, material: mat };
-  }, [threadCount, color, density, spread, topY, speedNorm, cubeWidth, cubeDepth, flowDensity, flowDuty, topFade, bottomFade]);
+  }, [threadCount, color, density, spread, topY, speedNorm, cubeWidth, cubeDepth, flowDensity, flowDuty, topFade, bottomFade, clipPlanes]);
   useFrame(({ clock }) => {
     const t = clock.elapsedTime * speedNorm;
     material.uniforms.uTime.value = t;
@@ -1431,10 +1565,6 @@ export type AutonomousAgentsSceneProps = {
   agentLayerCount?: number;
   agentLayerSpacing?: number;
   agentLayerStagger?: number;
-  agentDotCount?: number;
-  agentDotColor?: string;
-  agentDotSize?: number;
-  agentDotOpacity?: number;
   agentGridN?: number;
   agentNodeSize?: number;
   agentEdgeOpacity?: number;
@@ -1449,6 +1579,8 @@ export type AutonomousAgentsSceneProps = {
   agentSpawnRate?: number;
   agentMinAmplitude?: number;
   controlsRef?: Ref<ComponentRef<typeof OrbitControls>>;
+  realism?: RealismProps;
+  outcomes?: StrataSettings;
 };
 
 function SceneContents({
@@ -1508,10 +1640,6 @@ function SceneContents({
   agentLayerCount = 3,
   agentLayerSpacing = 0.6,
   agentLayerStagger = 0,
-  agentDotCount = 320,
-  agentDotColor = "#ffffff",
-  agentDotSize = 32,
-  agentDotOpacity = 28,
   agentGridN = 24,
   agentNodeSize = 15,
   agentEdgeOpacity = 23,
@@ -1535,6 +1663,7 @@ function SceneContents({
   // and clipping planes operate in world space after the group's scale is applied.
   const clipHalfW = (BOX_W / 2) * (width / BOX_W);
   const clipHalfD = (BOX_D / 2) * (depth / BOX_D);
+  const clipHalfH = (BOX_H / 2) * (height / BOX_H);
   return (
     <group scale={[width / BOX_W, height / BOX_H, depth / BOX_D]}>
       <GridFaces resolution={gridResolution} color={gridColor} opacity={gridOpacity} padding={gridPadding} />
@@ -1576,20 +1705,27 @@ function SceneContents({
       />
       <Enclosure opacity={enclosureLineOpacity} />
       <FloorParticles />
-      <FabricThreads
-        count={lineCount}
-        color={lineColor}
-        speed={lineAnimationSpeed}
-        density={lineBottomDensity}
-        spread={lineBottomSpread}
-        cubeWidth={cubeWidth}
-        cubeDepth={cubeDepth}
-        cubeBottomY={cubeBottomY}
-        flowDensity={lineFlowDensity}
-        flowDuty={lineFlowDuty}
-        topFade={lineTopFade}
-        bottomFade={lineBottomFade}
-      />
+      {/* -π/2 Z rotation turns the vertical cone (floor→cube) into a horizontal
+          one (left wall → center). The position offset compensates for
+          cubeBottomY so the convergence point lands at local x = 0, i.e.
+          exactly on the centered vertical slabs. */}
+      <group position={[-cubeBottomY, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+        <FabricThreads
+          count={lineCount}
+          color={lineColor}
+          speed={lineAnimationSpeed}
+          density={lineBottomDensity}
+          spread={lineBottomSpread}
+          cubeWidth={cubeWidth}
+          cubeDepth={cubeDepth}
+          cubeBottomY={cubeBottomY}
+          flowDensity={lineFlowDensity}
+          flowDuty={lineFlowDuty}
+          topFade={lineTopFade}
+          bottomFade={lineBottomFade}
+          clipPlanes={makeEnclosureClipVolume(clipHalfW, clipHalfH, clipHalfD)}
+        />
+      </group>
       <TopPipes
         count={lineTopExitCount}
         color={lineTopExitColor}
@@ -1619,7 +1755,7 @@ function SceneContents({
         const count = Math.max(1, Math.round(agentLayerCount));
         const totalHeight = (count - 1) * agentLayerSpacing;
         const perSliceSignals = Math.max(0, Math.round(agentSignalCount / count));
-        const agentClipPlanes = makeEnclosureClipPlanes(clipHalfW, clipHalfD);
+        const agentClipPlanes = makeEnclosureClipVolume(clipHalfW, clipHalfH, clipHalfD);
         const staggerRand = seeded(0xA6EC7);
         const jitterAmp = (agentLayerStagger / 100) * agentLayerSpacing;
         return Array.from({ length: count }).map((_, i) => {
@@ -1645,10 +1781,8 @@ function SceneContents({
               minAmplitude={agentMinAmplitude}
               seedOffset={i * 0.37}
               clipPlanes={agentClipPlanes}
-              dotCount={Math.round(agentDotCount / count)}
-              dotColor={agentDotColor}
-              dotSize={agentDotSize}
-              dotOpacity={agentDotOpacity}
+              dotCount={0}
+              dotOpacity={0}
             />
           );
         });
@@ -1674,16 +1808,19 @@ function SceneContents({
 }
 
 export function AutonomousAgentsGenerativeScene(props: AutonomousAgentsSceneProps) {
-  const { background, fov, ...rest } = props;
+  const { background, fov, realism, outcomes, ...rest } = props;
   return (
     <Canvas
       dpr={[1, 2]}
-      camera={{ position: [0, 1.2, 22], fov, near: 0.1, far: 200 }}
+      camera={{ position: [0, 0, 42], fov, near: 0.1, far: 200 }}
       gl={{ antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: true, alpha: false }}
       onCreated={({ gl }) => { gl.localClippingEnabled = true; }}
     >
       <color attach="background" args={[background]} />
+      {realism ? <RealismRig realism={realism} /> : null}
       <SceneContents {...rest} />
+      {outcomes ? <VerticalSlabs settings={outcomes} /> : null}
+      {outcomes ? <OutcomeConnectors settings={outcomes} /> : null}
     </Canvas>
   );
 }
@@ -1691,8 +1828,37 @@ export function AutonomousAgentsGenerativeScene(props: AutonomousAgentsSceneProp
 /** Render the current autonomous-agents scene inside an externally-owned
  *  <Canvas>, driven by StrataSettings. Used by the video exporter so the
  *  encoded clip matches the live canvas 1:1. */
+export function realismFromSettings(settings: StrataSettings): RealismProps {
+  return {
+    enabled: settings.realismEnabled,
+    toneMappingExposure: settings.toneMappingExposure,
+    hdriEnabled: settings.hdriEnabled,
+    hdriPreset: settings.hdriPreset,
+    hdriIntensity: settings.hdriIntensity,
+    hdriBackground: settings.hdriBackground,
+    aoEnabled: settings.aoEnabled,
+    aoIntensity: settings.aoIntensity,
+    aoRadius: settings.aoRadius,
+    aoAperture: settings.aoAperture,
+    keyLightIntensity: settings.keyLightIntensity,
+    fillLightIntensity: settings.fillLightIntensity,
+    rimLightIntensity: settings.rimLightIntensity,
+    keyLightColor: settings.keyLightColor,
+    rimLightColor: settings.rimLightColor,
+    filmGrain: settings.filmGrain,
+    bloomIntensity: settings.bloomIntensity,
+    bloomThreshold: settings.bloomThreshold,
+    bloomSmoothing: settings.bloomSmoothing,
+    vignette: settings.vignette,
+  };
+}
+
 export function AutonomousAgentsSceneFromSettings({ settings, includeControls = false }: { settings: StrataSettings; includeControls?: boolean }) {
   return (
+    <>
+      {settings.realismEnabled ? <RealismRig realism={realismFromSettings(settings)} /> : null}
+      {settings.verticalSlabsEnabled ? <VerticalSlabs settings={settings} /> : null}
+      {settings.outcomeConnectorsEnabled ? <OutcomeConnectors settings={settings} /> : null}
     <SceneContents
       includeControls={includeControls}
       autoRotate={settings.autoRotate}
@@ -1749,10 +1915,6 @@ export function AutonomousAgentsSceneFromSettings({ settings, includeControls = 
       agentLayerCount={settings.agentLayerCount}
       agentLayerSpacing={settings.agentLayerSpacing}
       agentLayerStagger={settings.agentLayerStagger}
-      agentDotCount={settings.agentDotCount}
-      agentDotColor={settings.agentDotColor}
-      agentDotSize={settings.agentDotSize}
-      agentDotOpacity={settings.agentDotOpacity}
       agentGridN={settings.agentGridN}
       agentNodeSize={settings.agentNodeSize}
       agentEdgeOpacity={settings.agentEdgeOpacity}
@@ -1767,5 +1929,6 @@ export function AutonomousAgentsSceneFromSettings({ settings, includeControls = 
       agentSpawnRate={settings.agentSpawnRate}
       agentMinAmplitude={settings.agentMinAmplitude}
     />
+    </>
   );
 }

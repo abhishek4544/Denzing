@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
+import { AgenticArchitectureTool } from "@/features/agentic-architecture/agentic-architecture-tool";
 import { AutonomousAgents3DTool } from "@/features/autonomous-agents-3d/autonomous-agents-3d-tool";
-import { MeshStrata3DLabTool } from "@/features/mesh-strata-3d-lab/mesh-strata-3d-lab-tool";
+import { AutonomousAgents3DLabTool } from "@/features/autonomous-agents-3d-lab/autonomous-agents-3d-lab-tool";
 import { MeshStrata3DTool } from "@/features/mesh-strata-3d/mesh-strata-3d-tool";
-import { OntologyExplorer3DTool } from "@/features/ontology-explorer-3d/ontology-explorer-3d-tool";
 import { SecurityGrid3DTool } from "@/features/security-grid-3d/security-grid-3d-tool";
 import { getTool, tools } from "@/features/tool-registry";
 
@@ -21,15 +21,15 @@ export default async function ToolPage({ params }: ToolPageProps) {
   if (!tool) notFound();
 
   switch (tool.id) {
-    case "ontology-explorer-3d":
-      return <OntologyExplorer3DTool />;
     case "mesh-strata-3d":
       return <MeshStrata3DTool />;
-    case "mesh-strata-3d-lab":
-      return <MeshStrata3DLabTool />;
     case "security-grid-3d":
       return <SecurityGrid3DTool />;
     case "autonomous-agents-3d":
       return <AutonomousAgents3DTool />;
+    case "autonomous-agents-3d-lab":
+      return <AutonomousAgents3DLabTool />;
+    case "agentic-architecture":
+      return <AgenticArchitectureTool />;
   }
 }

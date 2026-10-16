@@ -1,6 +1,4 @@
 import { notFound } from "next/navigation";
-import { AgenticArchitectureTool } from "@/features/agentic-architecture/agentic-architecture-tool";
-import { AutonomousAgents3DTool } from "@/features/autonomous-agents-3d/autonomous-agents-3d-tool";
 import { AutonomousAgents3DLabTool } from "@/features/autonomous-agents-3d-lab/autonomous-agents-3d-lab-tool";
 import { MeshStrata3DTool } from "@/features/mesh-strata-3d/mesh-strata-3d-tool";
 import { SecurityGrid3DTool } from "@/features/security-grid-3d/security-grid-3d-tool";
@@ -25,11 +23,7 @@ export default async function ToolPage({ params }: ToolPageProps) {
       return <MeshStrata3DTool />;
     case "security-grid-3d":
       return <SecurityGrid3DTool />;
-    case "autonomous-agents-3d":
-      return <AutonomousAgents3DTool />;
     case "autonomous-agents-3d-lab":
       return <AutonomousAgents3DLabTool />;
-    case "agentic-architecture":
-      return <AgenticArchitectureTool />;
   }
 }

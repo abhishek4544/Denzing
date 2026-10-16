@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls, OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
@@ -23,6 +23,9 @@ import { MAX_SLABS } from "../security-grid-3d/defaults";
 import { defaultLabSettings, type AutonomousAgentsLabSettings } from "./defaults";
 import { AutonomousAgentsLabScene } from "./scene";
 import { exportLabScene } from "./export-image";
+import type { ExportCamera } from "./export-options";
+
+const ExportDialog = lazy(() => import("./export-dialog"));
 
 function CameraSync({ fov }: { fov: number }) {
   const get = useThree((s) => s.get);
@@ -87,6 +90,11 @@ export function AutonomousAgents3DLabTool() {
   const [settings, setSettings] = useState<AutonomousAgentsLabSettings>(defaultLabSettings);
   const canvasHostRef = useRef<HTMLDivElement>(null);
   const orbitRef = useRef<unknown>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportCamera, setExportCamera] = useState<ExportCamera>({
+    position: [0, 10, 20],
+    target: [0, 0, 0],
+  });
 
   const update = useCallback(
     <K extends keyof AutonomousAgentsLabSettings>(
@@ -114,11 +122,36 @@ export function AutonomousAgents3DLabTool() {
     );
   }, []);
 
-  const onExport = useCallback(() => {
+  const onPngExport = useCallback(() => {
     const host = canvasHostRef.current;
     if (!host) return;
     const gl = host.querySelector("canvas");
     if (gl instanceof HTMLCanvasElement) exportLabScene(gl);
+  }, []);
+
+  const onExport = useCallback(() => {
+    const host = canvasHostRef.current;
+    const rect = host?.querySelector("canvas")?.getBoundingClientRect();
+    const controls = orbitRef.current as
+      | {
+          object: { position: THREE.Vector3; zoom: number };
+          target: THREE.Vector3;
+        }
+      | null;
+    if (controls) {
+      setExportCamera({
+        position: controls.object.position.toArray() as [number, number, number],
+        target: controls.target.toArray() as [number, number, number],
+        zoom: controls.object.zoom,
+        viewport: rect ? { width: rect.width, height: rect.height } : undefined,
+      });
+    } else if (rect) {
+      setExportCamera((cam) => ({
+        ...cam,
+        viewport: { width: rect.width, height: rect.height },
+      }));
+    }
+    setExportOpen(true);
   }, []);
 
   const d = settings.cameraDistance;
@@ -224,6 +257,38 @@ export function AutonomousAgents3DLabTool() {
             step={1}
             onChange={(v) => update("sceneRotationDegrees", v)}
           />
+          <SliderField
+            label="Left Offset"
+            value={settings.leftOffset}
+            min={0}
+            max={400}
+            step={1}
+            onChange={(v) => update("leftOffset", v)}
+          />
+          <SliderField
+            label="Right Offset"
+            value={settings.rightOffset}
+            min={0}
+            max={800}
+            step={1}
+            onChange={(v) => update("rightOffset", v)}
+          />
+          <SliderField
+            label="Top Offset"
+            value={settings.topOffset}
+            min={0}
+            max={400}
+            step={1}
+            onChange={(v) => update("topOffset", v)}
+          />
+          <SliderField
+            label="Bottom Offset"
+            value={settings.bottomOffset}
+            min={0}
+            max={400}
+            step={1}
+            onChange={(v) => update("bottomOffset", v)}
+          />
           <ColorField
             label="Background"
             color={settings.backgroundColor}
@@ -234,11 +299,101 @@ export function AutonomousAgents3DLabTool() {
           />
         </Section>
 
+        <Section title="Labels">
+          <ToggleField
+            size="compact"
+            label="Right Labels"
+            checked={settings.rightLabelsEnabled}
+            onCheckedChange={(v) => update("rightLabelsEnabled", v)}
+          />
+          {settings.rightLabels.map((text, i) => (
+            <TextField
+              key={`right-label-${i}`}
+              label={`Right ${i + 1}`}
+              value={text}
+              onChange={(v) => {
+                const next = settings.rightLabels.slice();
+                next[i] = v;
+                update("rightLabels", next);
+              }}
+            />
+          ))}
+          <SliderField
+            label="Right Offset X"
+            value={settings.rightLabelsOffsetX}
+            min={-2400}
+            max={2400}
+            step={1}
+            onChange={(v) => update("rightLabelsOffsetX", v)}
+          />
+          <SliderField
+            label="Right Spacing Y"
+            value={settings.rightLabelsSpacingY}
+            min={10}
+            max={400}
+            step={1}
+            onChange={(v) => update("rightLabelsSpacingY", v)}
+          />
+          <SliderField
+            label="Right Font Size"
+            value={settings.rightLabelsFontSize}
+            min={6}
+            max={120}
+            step={1}
+            onChange={(v) => update("rightLabelsFontSize", v)}
+          />
+          <ColorField
+            label="Right Color"
+            color={settings.rightLabelsColor}
+            opacity={100}
+            onColorChange={(v) => update("rightLabelsColor", v)}
+            onOpacityChange={() => {}}
+            showPipette={false}
+          />
+          <ToggleField
+            size="compact"
+            label="Center Label"
+            checked={settings.centerLabelEnabled}
+            onCheckedChange={(v) => update("centerLabelEnabled", v)}
+          />
+          <TextField
+            label="Center Text"
+            value={settings.centerLabelText}
+            onChange={(v) => update("centerLabelText", v)}
+          />
+          <SliderField
+            label="Center Offset Y"
+            value={settings.centerLabelOffsetY}
+            min={-1200}
+            max={1200}
+            step={1}
+            onChange={(v) => update("centerLabelOffsetY", v)}
+          />
+          <SliderField
+            label="Center Font Size"
+            value={settings.centerLabelFontSize}
+            min={6}
+            max={200}
+            step={1}
+            onChange={(v) => update("centerLabelFontSize", v)}
+          />
+          <ColorField
+            label="Center Color"
+            color={settings.centerLabelColor}
+            opacity={100}
+            onColorChange={(v) => update("centerLabelColor", v)}
+            onOpacityChange={() => {}}
+            showPipette={false}
+          />
+        </Section>
+
         <Section title="Camera">
           <SelectField
             label="Mode"
             value={settings.cameraMode}
-            onChange={(v) => update("cameraMode", v as "perspective" | "isometric")}
+            onChange={(v) =>
+              update("cameraMode", v as "perspective" | "isometric")
+            }
             options={[
               { value: "perspective", label: "Perspective" },
               { value: "isometric", label: "Isometric (Ortho)" },
@@ -247,23 +402,15 @@ export function AutonomousAgents3DLabTool() {
           <SliderField
             label="Iso Zoom"
             value={settings.isoZoom}
-            min={10}
-            max={160}
+            min={20}
+            max={240}
             step={1}
             onChange={(v) => update("isoZoom", v)}
           />
           <SliderField
-            label="Field of View"
-            value={settings.fov}
-            min={16}
-            max={90}
-            step={1}
-            onChange={(v) => update("fov", v)}
-          />
-          <SliderField
-            label="Pitch"
+            label="Pitch (deg)"
             value={settings.cameraPitch}
-            min={-5}
+            min={10}
             max={85}
             step={1}
             onChange={(v) => update("cameraPitch", v)}
@@ -271,12 +418,21 @@ export function AutonomousAgents3DLabTool() {
           <SliderField
             label="Distance"
             value={settings.cameraDistance}
-            min={6}
+            min={10}
             max={60}
-            step={1}
+            step={0.5}
             onChange={(v) => update("cameraDistance", v)}
           />
+          <SliderField
+            label="FOV"
+            value={settings.fov}
+            min={14}
+            max={60}
+            step={1}
+            onChange={(v) => update("fov", v)}
+          />
           <ToggleField
+            size="compact"
             label="Auto Rotate"
             checked={settings.autoRotate}
             onCheckedChange={(v) => update("autoRotate", v)}
@@ -285,8 +441,29 @@ export function AutonomousAgents3DLabTool() {
             label="Rotate Speed"
             value={settings.rotateSpeed}
             min={0}
-            max={100}
+            max={60}
             onChange={(v) => update("rotateSpeed", v)}
+          />
+          <SliderField
+            label="Target X (←→)"
+            value={settings.cameraTargetX}
+            min={-500}
+            max={500}
+            onChange={(v) => update("cameraTargetX", v)}
+          />
+          <SliderField
+            label="Target Y (↑↓)"
+            value={settings.cameraTargetY}
+            min={-500}
+            max={500}
+            onChange={(v) => update("cameraTargetY", v)}
+          />
+          <SliderField
+            label="Target Z (depth)"
+            value={settings.cameraTargetZ}
+            min={-500}
+            max={500}
+            onChange={(v) => update("cameraTargetZ", v)}
           />
         </Section>
 
@@ -938,6 +1115,17 @@ export function AutonomousAgents3DLabTool() {
           />
         </Section>
       </ControlsPanel>
+
+      {exportOpen && (
+        <Suspense fallback={null}>
+          <ExportDialog
+            settings={settings}
+            camera={exportCamera}
+            onPng={onPngExport}
+            onClose={() => setExportOpen(false)}
+          />
+        </Suspense>
+      )}
     </ToolShell>
   );
 }

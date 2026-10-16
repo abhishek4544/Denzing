@@ -26,29 +26,16 @@ export const tools: readonly ToolDefinition[] = [
     href: "/tools/security-grid-3d",
   },
   {
-    id: "autonomous-agents-3d",
-    label: "Autonomous Agents 3D",
-    description:
-      "Autonomous agents workspace; starts from the Mesh Strata 3D template and will diverge over time.",
-    href: "/tools/autonomous-agents-3d",
-  },
-  {
     id: "autonomous-agents-3d-lab",
     label: "Autonomous Agents Lab",
     description:
-      "Flat convergence → decision → fanout diagram for Denzing autonomous agents; experimental sibling of Autonomous Agents 3D.",
+      "Flat convergence → decision → fanout diagram for Denzing autonomous agents.",
     href: "/tools/autonomous-agents-3d-lab",
-  },
-  {
-    id: "agentic-architecture",
-    label: "Agentic Architecture",
-    description:
-      "Vertical exploded-isometric diagram: People, Platforms, Systems — three stacked wireframe modules with a red agentic infrastructure core.",
-    href: "/tools/agentic-architecture",
   },
 ];
 
-export const defaultTool = tools[0];
+export const defaultTool =
+  tools.find((tool) => tool.id === "autonomous-agents-3d-lab") ?? tools[0];
 
 export function getTool(id: string) {
   return tools.find((tool) => tool.id === id);

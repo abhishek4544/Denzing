@@ -50,4 +50,10 @@ export const defaultLabSettings: AutonomousAgentsLabSettings = {
   centerLabelColor: "#ffffff",
   centerLabelOffsetY: 500,
   ...presetSettings,
+  // Tile pass softened after the preset spread so the particle wall reads as
+  // texture, not punctuation: smaller tile footprint, dimmer emission, less
+  // violent flicker.
+  activeTileScale: 22,
+  activeTileEmission: 5,
+  activeAnimIntensity: 32,
 } as AutonomousAgentsLabSettings;

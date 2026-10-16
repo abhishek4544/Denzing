@@ -1047,7 +1047,7 @@ export function AutonomousAgents3DLabTool() {
           <SliderField
             label="Active Tile Scale"
             value={settings.activeTileScale}
-            min={40}
+            min={1}
             max={100}
             onChange={(v) => update("activeTileScale", v)}
           />

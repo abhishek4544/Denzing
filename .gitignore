@@ -40,5 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Generated website code export template
+# Generated website code export templates
 /public/exports/mesh-strata-template.json
+/public/exports/security-grid-template.json
+/public/exports/autonomous-agents-template.json

@@ -31,7 +31,7 @@ export default function ExportDialog({
   onClose: () => void;
   onPng: () => void;
 }) {
-  const [format, setFormat] = useState<"webm" | "mp4" | "png">("webm");
+  const [format, setFormat] = useState<"webm" | "mp4" | "png" | "code">("webm");
   const [options, setOptions] = useState<VideoExportOptions>({
     resolution: "1080p",
     fps: 30,
@@ -47,7 +47,7 @@ export default function ExportDialog({
     name: string;
     key: string;
   } | null>(null);
-  const exportKey = JSON.stringify({ format, options });
+  const exportKey = JSON.stringify({ format, options, settings, camera });
   const isVideo = format === "webm" || format === "mp4";
   const controller = useRef<AbortController | null>(null);
   const resultUrl = useRef<string | null>(null);
@@ -77,24 +77,33 @@ export default function ExportDialog({
       resultUrl.current = null;
     }
     try {
-      const { exportSecurityGridVideo } = await import("./export-video");
-      job.signal.throwIfAborted();
-      const blob = await exportSecurityGridVideo(
-        settings,
-        camera,
-        options,
-        format,
-        job.signal,
-        setProgress,
-      );
+      let blob: Blob;
+      let name: string;
+      let readyMessage: string;
+      if (format === "code") {
+        const { exportSecurityGridCode } = await import("./export-code");
+        blob = await exportSecurityGridCode(settings, camera, job.signal);
+        name = "security-grid-3d-website.zip";
+        readyMessage = "Ready · Website code ZIP with your current settings";
+      } else {
+        const { exportSecurityGridVideo } = await import("./export-video");
+        job.signal.throwIfAborted();
+        blob = await exportSecurityGridVideo(
+          settings,
+          camera,
+          options,
+          format,
+          job.signal,
+          setProgress,
+        );
+        name = `security-grid-${options.resolution}-${options.fps}fps${options.loop ? "-loop" : ""}.${format}`;
+        readyMessage = `Ready · ${format.toUpperCase()} · ${options.resolution.toUpperCase()} · ${options.fps} FPS · ${options.duration}s${options.loop ? " · LOOP" : ""}`;
+      }
       job.signal.throwIfAborted();
       const url = URL.createObjectURL(blob);
       resultUrl.current = url;
-      const name = `security-grid-${options.resolution}-${options.fps}fps${options.loop ? "-loop" : ""}.${format}`;
       setResult({ url, name, key: exportKey });
-      setMessage(
-        `Ready · ${format.toUpperCase()} · ${options.resolution.toUpperCase()} · ${options.fps} FPS · ${options.duration}s${options.loop ? " · LOOP" : ""}`,
-      );
+      setMessage(readyMessage);
       download(url, name);
     } catch (error) {
       setMessage(
@@ -134,7 +143,9 @@ export default function ExportDialog({
           <Dialog.Description className="mb-4 text-[10px] text-muted-foreground">
             {isVideo
               ? `Render your current view as ${format === "mp4" ? "MP4" : "WebM"} video. High-resolution exports may take longer than the clip duration.`
-              : "Download a PNG of the current canvas."}
+              : format === "code"
+                ? "Download a runnable React website with your current settings, camera view, and renderer."
+                : "Download a PNG of the current canvas."}
           </Dialog.Description>
           <fieldset
             disabled={busy}
@@ -145,13 +156,14 @@ export default function ExportDialog({
               label="Format"
               value={format}
               onChange={(value) => {
-                setFormat(value as "webm" | "mp4" | "png");
+                setFormat(value as "webm" | "mp4" | "png" | "code");
                 setMessage("");
               }}
               options={[
                 { value: "webm", label: "WebM video" },
                 { value: "mp4", label: "MP4 video" },
                 { value: "png", label: "PNG image" },
+                { value: "code", label: "Website code (ZIP)" },
               ]}
             />
             {isVideo && (
@@ -236,11 +248,13 @@ export default function ExportDialog({
                 className="h-2 w-full accent-foreground"
               />
               <p className="mt-1 text-[10px] text-muted-foreground">
-                {progress === 0
-                  ? "Preparing renderer…"
-                  : progress >= 0.95
-                    ? "Finishing video…"
-                    : `Rendering · ${Math.round(progress * 100)}%`}
+                {format === "code"
+                  ? "Preparing code package…"
+                  : progress === 0
+                    ? "Preparing renderer…"
+                    : progress >= 0.95
+                      ? "Finishing video…"
+                      : `Rendering · ${Math.round(progress * 100)}%`}
               </p>
             </div>
           )}
@@ -260,7 +274,9 @@ export default function ExportDialog({
             >
               {isVideo
                 ? `Export ${format === "mp4" ? "MP4" : "WebM"}`
-                : "Download PNG"}
+                : format === "code"
+                  ? "Download code ZIP"
+                  : "Download PNG"}
             </button>
             {busy && (
               <button

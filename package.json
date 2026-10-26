@@ -11,8 +11,11 @@
     "check": "npm run lint && npm run typecheck && npm run build",
     "push": "npm run check && git push",
     "export:template": "node scripts/build-mesh-strata-template.mjs",
-    "predev": "npm run export:template",
-    "prebuild": "npm run export:template"
+    "export:security-template": "node scripts/build-security-grid-template.mjs",
+    "export:autonomous-template": "node scripts/build-autonomous-agents-template.mjs",
+    "export:templates": "npm run export:template && npm run export:security-template && npm run export:autonomous-template",
+    "predev": "npm run export:templates",
+    "prebuild": "npm run export:templates"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
